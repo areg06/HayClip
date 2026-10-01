@@ -1,6 +1,25 @@
 # Public repo cleanup: removing creator-derived material from Git history
 
-Status: **prepared only. History has not been rewritten and nothing has been pushed.** Prepared 2026-10-01.
+Status: **executed 2026-10-01.** The founder approved it, including decision C and the noreply author email.
+
+What was done:
+- `git filter-repo` ran on a clean clone with three changes: the path purge, the text replacements (required + optional identifiers), and a `--mailmap` to `64148111+areg06@users.noreply.github.com`.
+- On GitHub, the old repository was deleted and `areg06/HayClip` was recreated as a public repo.
+- Only the clean history was pushed. The new `main` starts at the rewritten root commit, and the last rewritten commit is `54437c6`.
+
+Verification, from a fresh clone of the public repo:
+- 0 removed paths, 0 quotes / test lines / ids, 0 old-email occurrences and 0 secret patterns across all 19 commits.
+- The old commit `c480db0` returns 404 on the API, the web commit page and raw file URLs.
+- The working copy now uses the clean `.git`, and the full suite (191 tests, including the pilot-03 regression) passes.
+- The pre-rewrite `.git`, the pre-rewrite bundle and the replacement lists (which contained creator text) were deleted.
+
+Kept privately (`~/.hayclips/backups/`, owner-only permissions):
+- the paid-transcript recovery backup;
+- a bundle of the clean history.
+
+Commit SHAs cited elsewhere in `docs/saas/` refer to the pre-rewrite history.
+
+The original plan follows, kept for the record.
 The procedure was dry-run on a throwaway clone in the session scratchpad (§5).
 
 ## 1. Situation
