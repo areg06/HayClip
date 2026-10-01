@@ -16,7 +16,9 @@ For a real pilot, follow "Running a pilot" in `README.md`: pick moments from fre
 then send only the chosen clips to Harmar with the key read from `~/.config/harmar/key`:
 
 ```bash
-HARMAR_API_KEY="$(cat ~/.config/harmar/key)" python3 harmar_clips.py pilot-04
+.venv/bin/python harmar_clips.py pilot-04            # free plan first
+HARMAR_API_KEY="$(cat ~/.config/harmar/key)" HAYCLIPS_ALLOW_PAID_HARMAR=1 \
+  .venv/bin/python harmar_clips.py pilot-04 --confirm-paid --by founder
 ```
 
 Open `pilot-04/review.html`. Do not paste the

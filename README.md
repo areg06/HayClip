@@ -1,6 +1,6 @@
 # HayClips — experimental Armenian podcast clipper
 
-A local operator prototype that turns a long Armenian conversation (podcast, talk show, stand-up)
+A local operator tool that turns a long Armenian conversation (podcast, talk show, stand-up)
 into a few vertical 9:16 shorts with burned-in Armenian captions, for a human to review.
 
 It **does not** post anything, email creators, predict virality or guarantee accurate transcription.
@@ -10,97 +10,88 @@ Every clip, caption and hook needs human review before anyone publishes it (see 
 
 ```
 YouTube auto-captions (free)
-  -> clipper.py        picks candidate windows on sentence edges (heuristic score)
-  -> operator          keeps 2-3 windows, writes titles and optional hooks in suggestions.json
-  -> fetch_clips.py    downloads only those windows (+5 s padding) at 1080p
-  -> harmar_clips.py   paid Harmar transcription of the clips only (word timestamps, cached)
-  -> burn_captions.py  re-snaps cuts to Harmar sentences, speaker crop (reframe.py),
-                       loudness -14 LUFS, caption styles A/B/C, hook, review.html + checks
-  -> human review      which clip/style would you post, and how long would fixing it take?
+  -> clipper.py          candidate windows on sentence edges, with an explained heuristic score -> candidates.json
+  -> python -m hayclips  operator selects 2-3 candidates, writes titles/hooks, records creator consent -> project.json
+  -> fetch_clips.py      downloads only those windows (+5 s padding) at <=1080p, extracts audio.m4a
+  -> harmar_clips.py     paid Harmar transcription of the audio only (word timestamps); plan-only unless confirmed
+  -> burn_captions.py    re-snaps cuts to sentences, checks the caption/render timeline, speaker crop,
+                         loudness -14 LUFS, caption styles A/B/C, hook, review.html + output checks
+  -> human review        which clip/style would you post, and how long would fixing it take?
 ```
 
-The full episode is never downloaded or sent to Harmar. Only the picked windows are (about 3 min
-per pilot), which keeps the cost low and fits the Harmar trial.
-
-## Files
-
-| File | Role |
-|---|---|
-| `clipper.py` | Core library + CLI: SRT loading (fixes rolling YouTube cues), sentence units, window scoring, Harmar API client with caching, letterbox export. Also runs standalone on a local video (`--srt`, `--harmar`, `--transcribe`). |
-| `fetch_clips.py` | Downloads the chosen windows with `yt-dlp`, keeps `clip_NN.wide.mp4` (landscape) and renders `clip_NN.mp4` (letterboxed preview; this is the file sent to Harmar). |
-| `harmar_clips.py` | Sends each `clip_NN.mp4` to Harmar once, with a balance check up front; results go to `harmar/clip_NN/`. |
-| `reframe.py` | Runs in `.venv` (OpenCV). Detects camera cuts and the speaker's face, then plans one static 9:16 crop per shot. |
-| `burn_captions.py` | Final render: sentence re-snap, crop, captions, hook, loudnorm, `review.html`, `ffprobe` checks. |
-| `models/face_detection_yunet_2023mar.onnx` | YuNet face detector (OpenCV Zoo), 232 KB. |
-| `research/` | `caption-style.md` (caption styles, safe zones, height), `cutting-retention.md` (where to cut), `visual-audio.md` (framing, loudness), plus samples. Evidence labels separate platform docs from folklore. |
-| `outreach-hy.md` | Draft creator outreach message. It is never sent automatically. |
-| `START-IN-CLAUDE-CODE.md`, `.claude/agents/` | Four-teammate Claude Code setup (harmar-api, clip-engine, quality-review, creator-research). |
+The full episode is never downloaded or sent to Harmar: only the selected windows.
 
 ## Setup
 
-- macOS with Python 3.10+, `brew install ffmpeg yt-dlp`.
-- Captions use the **Noto Sans Armenian** font (preinstalled on macOS; on Linux install it, or libass shows boxes).
-- Speaker crop: `python3 -m venv .venv && .venv/bin/pip install opencv-python-headless numpy`.
-  Without it, clips fall back to a blurred letterbox.
-- Optional local speech recognition: `.venv/bin/pip install faster-whisper` (`clipper.py --transcribe`).
-- Harmar key: keep it in a file outside the repo, e.g. `~/.config/harmar/key` (chmod 600), and pass it
-  per command as `HARMAR_API_KEY="$(cat ~/.config/harmar/key)"`. Never commit it or paste it into chat.
-  Keys start with `hk_live_`. A `whsec_` value is a webhook secret, not an API key.
+```bash
+brew install ffmpeg yt-dlp fontconfig
+python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'   # numpy, OpenCV, pytest
+.venv/bin/python -m pytest -q                                  # offline; cannot spend money
+```
 
-## Running a pilot (current flow)
+- Run everything with `.venv/bin/python` (one environment for all steps, including face detection).
+- Captions need the **Noto Sans Armenian** font (Black and SemiBold). Rendering refuses to start if
+  fontconfig cannot find it, instead of rendering empty boxes. `HAYCLIPS_FONTS_DIR` points at a font folder.
+- Harmar key: keep it outside the repo, e.g. `~/.config/harmar/key` (chmod 600), and pass it per command.
+  Keys start with `hk_live_`; a `whsec_` value is a webhook secret, not an API key.
 
-Only do this with a video the creator has agreed to let us process and send to Harmar.
+## Running a pilot
+
+Only with a video whose creator agreed to processing and to sending clip windows to Harmar.
 
 ```bash
 P=pilot-04; URL='https://www.youtube.com/watch?v=...'
-# 1. free captions + candidate windows
-yt-dlp --skip-download --write-auto-subs --sub-langs hy-orig --sub-format srt -o $P/source/src "$URL"
-yt-dlp --skip-download --print duration "$URL"          # use as --duration
-python3 clipper.py --srt $P/source/src.hy-orig.srt --no-render --duration 5400 \
+# 1. free captions + candidates
+yt-dlp --ignore-config --skip-download --write-auto-subs --sub-langs hy-orig --sub-format srt -o $P/source/src -- "$URL"
+.venv/bin/python clipper.py --srt $P/source/src.hy-orig.srt --duration 5400 --source-url "$URL" \
   --skip-start 75 --skip-end 120 --count 6 --out $P
-# 2. edit $P/suggestions.json by hand (see fields below): keep 2-3, add source/title/hook/pick_note
+# 2. choose clips (prints the new stable clip id) and record consent
+.venv/bin/python -m hayclips select $P cand_xxxxxxxxxx --title "..." --hook "..." --pick-note "..."
+.venv/bin/python -m hayclips consent $P --granted-by "creator name/channel" --statement "how and when they agreed"
 # 3. download only those windows
-python3 fetch_clips.py $P
-# 4. paid transcription of the clips (checks balance, never resubmits a cached job)
-HARMAR_API_KEY="$(cat ~/.config/harmar/key)" python3 harmar_clips.py $P
-# 5. render and review
-python3 burn_captions.py $P --styles A,B,C
+.venv/bin/python fetch_clips.py $P
+# 4. transcription: first a free plan, then the paid run
+.venv/bin/python harmar_clips.py $P
+HARMAR_API_KEY="$(cat ~/.config/harmar/key)" HAYCLIPS_ALLOW_PAID_HARMAR=1 \
+  .venv/bin/python harmar_clips.py $P --confirm-paid --by "founder"
+# 5. render and review (free to repeat)
+.venv/bin/python burn_captions.py $P --styles A,B,C
 open $P/review.html
 ```
 
-`--skip-start` / `--skip-end` skip a cold-open teaser and the outro. Re-running `burn_captions.py` costs
-nothing and is the way to apply manual fixes.
+Other operator commands (`.venv/bin/python -m hayclips ...`):
+- `status P`: clips in display order, window, transcript state, renders, consent.
+- `edit P CLIP --title/--hook/--pick-note/--order/--selected yes|no/--trim START:END/--auto-trim`
+- `reconcile P CLIP --show | --attach-job-id JOB --by NAME | --not-created --by NAME --evidence TEXT`
+- `migrate P`: convert an old `suggestions.json` pilot (already done for pilots 01–03).
 
-### `suggestions.json` fields (one object per clip, in order clip_01, clip_02, ...)
+## Project layout and who owns what
 
-| Field | Who sets it | Meaning |
+| Path | Owner | Contents |
 |---|---|---|
-| `start`, `end` | clipper / you | Planned window in source seconds |
-| `text`, `score` | clipper | YouTube-caption text and heuristic score (not a virality prediction) |
-| `source` | you | YouTube URL (required by `fetch_clips.py`) |
-| `title` | you | Label on the review page |
-| `hook` | you (founder approves) | ≤45 characters, shown at the top for the first 3 s. It must quote the speaker faithfully. `--no-hook` hides it |
-| `pick_note` | you | Why this window was chosen or changed |
-| `pad`, `pad_start` | fetch_clips | Padding downloaded around the window |
-| `caption_start`, `caption_end`, `snap` | burn_captions / you | Final trim inside the padded clip. To fix a cut, edit these and set `"snap": "manual"` |
-| `edits`, `transcript_source` | burn_captions | Audit trail: source times, trim, hook, audio, framing, snap notes |
+| `project.json` | operator commands only | source, consent records, clips: stable id, display order, title, hook, pick note, planned window, manual trim |
+| `candidates.json` | `clipper.py` | machine candidates with score features. Regenerating never touches `project.json` |
+| `clips/<clip_id>/window.json` | `fetch_clips.py` | source range, padding, sha256 of `wide.mp4` / `audio.m4a` (or legacy `preview.mp4`) |
+| `clips/<clip_id>/transcription/` | `harmar_clips.py` | one record per paid attempt (state, exact media sha256, job id, history) + raw results. **Never delete** |
+| `clips/<clip_id>/crop.json` | renderer | per-shot crop plan, tied to the `wide.mp4` hash. Edit a shot's `x` to reframe |
+| `clips/<clip_id>/render/` | `burn_captions.py` | `A/B/C.mp4` (final clips), `.ass`, `captions.srt`, `render.json` (cut, alignment, checks) |
+| `review.html` | `burn_captions.py` | review page in display order |
+| `legacy/` | migration | original `suggestions.json`, Harmar caches and review page of migrated pilots |
 
-### Output files per clip
+Clip ids (`clp_…`) never change. Reordering, deleting or adding clips cannot attach one clip's
+transcript, crop, captions or render to another.
 
-| File | What it is |
-|---|---|
-| `clip_NN_A.mp4`, `_B.mp4`, `_C.mp4` | **Final vertical clips** in the three caption styles (720x1280) |
-| `clip_NN.mp4` | Uncut padded preview, letterboxed. It is the file Harmar transcribed; do not re-render it, because the cache is keyed to its hash |
-| `clip_NN.wide.mp4` | Uncut padded landscape window, used for the speaker crop |
-| `clip_NN.crop.json` | Crop plan: one `x` per camera shot. Edit `x` to reframe a shot, then re-run |
-| `clip_NN.srt` | Harmar captions for the final cut, for uploading as platform captions |
-| `clip_NN.youtube.srt` | Free YouTube auto-captions for comparison |
-| `clip_NN_<style>.ass` | Caption script burned into the video |
-| `harmar/clip_NN/harmar_transcript.json` | Cached Harmar job and result. Never delete it: deleting means paying again |
-| `review.html` | Review page: all styles side by side, uncut version, transcript, first-3-s text, framing notes |
+## Paid-operation rules (enforced in code)
 
-`burn_captions.py` prints `CHECK:` lines for anything a human should look at: a wrong size or
-duration, captions past the end, late first words, and shots with two faces or no face.
+- A new Harmar submission needs **all** of: a consent record, `--confirm-paid --by NAME`,
+  `HAYCLIPS_ALLOW_PAID_HARMAR=1`, a key, a balance of ≥110% of the need, and the budgets:
+  600 s per operation, 600 s per project, 1200 s per 24 h, 180 s per window. All are configurable with
+  `HAYCLIPS_*` environment variables (`hayclips/config.py`).
+- A transcript is reused only for the **exact bytes** it was made from (sha256). If the bytes changed, the run stops for investigation.
+- Every step is saved before the next network call. If Harmar might have accepted a submission but we never got
+  the job id (timeout, reset, 5xx, malformed reply, crash), the clip goes to **reconciliation**. Nothing is resubmitted
+  automatically: check the Harmar dashboard and use `python -m hayclips reconcile`.
+- The test suite blocks all non-local network traffic and refuses to run with the paid opt-in set.
 
 ## Caption styles and placement
 
@@ -110,37 +101,26 @@ Defined in `research/caption-style.md`:
 - **B · one-word punch**: 1–2 big words.
 - **C · karaoke box**: a short line in a translucent box.
 
-All styles use Noto Sans Armenian in mixed case. `.upper()` is never used, because Python turns `և` into `ԵՒ`.
-Captions are centred horizontally. The text's bottom edge is at y=930 of 1280 (`--caption-bottom`), about 100 px
-below the speaker's chin and above the TikTok/Shorts bottom UI. Use `--caption-bottom 830` for Meta ads.
-There is no emoji, because libass cannot render colour emoji.
+All styles use Noto Sans Armenian in mixed case (no `.upper()`: Python turns `և` into `ԵՒ`). Captions are
+centred; their bottom edge is at y=930 of 1280 (`--caption-bottom`), below the speaker's chin and above the
+TikTok/Shorts UI. Use `--caption-bottom 830` for Meta ads. Hooks are limited to 45 characters. Transcript and hook
+text cannot inject caption formatting. There is no emoji (libass cannot render colour emoji).
 
-## Cost and safety rules
-
-- Harmar is billed per second when a transcript is submitted. `harmar_clips.py` checks `/v1/balance` first and
-  caches the job ID before polling, so a retry never charges twice.
-- Before sending anything, confirm the creator's consent for Harmar.
-- Nothing is published or emailed. The founder reviews every sample and message.
-- Delete large downloads you no longer need. The pipeline keeps only per-clip windows.
-
-## Status (2026-09-30)
+## Status (2026-10-01)
 
 | Pilot | Source | State |
 |---|---|---|
-| `pilot-01` | pilot-01 show (stand-up) | 3 clips, Harmar segment timestamps, old letterbox style |
-| `pilot-02` | Podcast, pilot02vid0 | 3 clips, segment timestamps, old style |
-| `pilot-03` | pilot-03 podcast | 3 clips, word timestamps, speaker crop, styles A/B/C. **Current reference** |
+| `pilot-01` | pilot-01 show (stand-up) | migrated; consent recorded; segment timestamps; letterbox (no landscape window) |
+| `pilot-02` | Podcast, pilot02vid0 | migrated; **no consent record** (cannot be sent to Harmar again); letterbox |
+| `pilot-03` | pilot-03 podcast | migrated; consent recorded; word timestamps; speaker crop; **regression reference** |
 
-Harmar trial balance after pilot-03: **133 s**, which is not enough for another 3-clip pilot.
-Pilots 01–02 can be re-rendered with the new captions, but they have no landscape windows (letterbox) and no padding (no re-snap).
+Harmar trial balance after pilot-03: 133 s. Phase 1a details: `docs/saas/phase-1a-report.md`.
 
 ## Known limitations
 
 - Clip selection is a text heuristic. Its word lists (weak openers, fillers) were guessed and need checking by a native editor.
-  Pre-Harmar snapping depends on YouTube's punctuation, which is patchy.
 - Harmar writes Russian words in Cyrillic (вообще, гаишник). Decide with the creator whether to transliterate them.
-- The speaker crop is static per camera shot, so it suits multicam studio shows. Single wide shots with 2–3
-  people need active-speaker detection, which is not built.
-- Not built: silence tightening, cold-open teasers, music, a hosted service, login or billing (out of scope until a
-  creator confirms the output is useful).
+- The speaker crop is static per camera shot (multicam studio shows). Two-person shots are only flagged.
+- The audio-only Harmar path and the real yt-dlp download path are tested against fakes; neither has had a live run yet.
+- Not built: browser app, uploads, login, billing, silence tightening, teasers, music.
 - Captions and cuts are **unreviewed machine output** until a human signs them off.

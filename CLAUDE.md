@@ -32,14 +32,16 @@ fixture through FFmpeg and reviewing the MP4 dimensions and timestamps.
 
 ## Current architecture
 
-Free YouTube captions -> `clipper.py` (sentence-edge candidate windows) -> operator picks in
-`suggestions.json` -> `fetch_clips.py` (only padded windows) -> `harmar_clips.py` (paid, word
-timestamps, cached by clip hash) -> `burn_captions.py` (Harmar sentence re-snap, `reframe.py`
-speaker crop via `.venv`, caption styles A/B/C, loudnorm, `review.html`, ffprobe checks).
-Never re-render a `clip_NN.mp4` that has a Harmar cache. `README.md` has the file map, the
-`suggestions.json` fields, pilot status and limitations. `research/` has the caption, cutting and
-framing research. `outreach-hy.md` is a draft. The heuristic cannot understand content deeply
-yet; human quality review is still the next product task.
+Package `hayclips/` (Phase 1a, see `docs/saas/phase-1a-report.md`); root scripts are thin CLIs:
+`clipper.py` (candidates.json) -> `python -m hayclips select/consent` (project.json) ->
+`fetch_clips.py` (clips/<id>/wide.mp4 + audio.m4a + window.json) -> `harmar_clips.py` (durable
+paid attempts, plan-only unless `--confirm-paid` and `HAYCLIPS_ALLOW_PAID_HARMAR=1`) ->
+`burn_captions.py` (alignment check, crop, captions A/B/C, review.html). Clips have stable ids;
+never rename/delete `clips/<id>/transcription/` or re-create recorded media. All external processes go
+through `hayclips/proc.py`. Run with `.venv/bin/python`; tests (`pytest`) are offline and cannot spend
+money. `docs/saas/` holds the SaaS plan; Phase 1b (local web app) needs founder approval.
+`outreach-hy.md` is a draft. The heuristic cannot understand content deeply yet; human quality
+review is still the next product task.
 
 ## First milestone
 

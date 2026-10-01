@@ -1,3 +1,2 @@
-faster-whisper>=1.1,<2
-opencv-python-headless>=4.9  # reframe.py speaker crop
-numpy
+# Install with: .venv/bin/pip install -e '.[dev]'  (dependencies live in pyproject.toml)
+-e .[dev]
