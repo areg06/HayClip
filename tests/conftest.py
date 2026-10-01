@@ -66,3 +66,37 @@ def pytest_collection_modifyitems(config, items):
     for item in items:
         if "local_fixture" in item.keywords and not LOCAL_FIXTURES.exists():
             item.add_marker(skip_local)
+
+
+# ----- Postgres (Phase 1b) --------------------------------------------------------------------------
+# Tests that need a database get a fresh, uniquely named database on the local socket-only dev cluster
+# (scripts/dev-postgres.sh). If the cluster is not running, those tests are skipped.
+
+ADMIN_DSN = os.environ.get("HAYCLIPS_TEST_ADMIN_DSN") or \
+    f"host={Path.home() / '.hayclips' / 'pgsock'} port=54329 user=hayclips dbname=postgres"
+
+
+@pytest.fixture
+def pg_dsn():
+    import secrets
+    try:
+        import psycopg
+        admin = psycopg.connect(ADMIN_DSN, autocommit=True, connect_timeout=3)
+    except Exception as exc:  # noqa: BLE001
+        pytest.skip(f"local Postgres not running ({exc.__class__.__name__}); run scripts/dev-postgres.sh start")
+    name = f"hayclips_test_{secrets.token_hex(4)}"
+    admin.execute(f'CREATE DATABASE "{name}"')
+    dsn = ADMIN_DSN.replace("dbname=postgres", f"dbname={name}")
+    from hayclips import db
+    with db.connect(dsn) as conn:
+        db.migrate(conn)
+    yield dsn
+    admin.execute(f'DROP DATABASE "{name}" WITH (FORCE)')
+    admin.close()
+
+
+@pytest.fixture
+def pg(pg_dsn):
+    from hayclips import db
+    with db.connect(pg_dsn) as conn:
+        yield conn

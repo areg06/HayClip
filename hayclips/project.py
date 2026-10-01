@@ -125,6 +125,16 @@ class ProjectRepo:
         self.save(project)
         return clip
 
+    def update_source(self, **fields) -> Project:
+        """Record source metadata found by inspection (kind, video_id, url, title, duration)."""
+        allowed = {"kind", "video_id", "url", "title", "duration", "captions"}
+        if set(fields) - allowed:
+            raise ValidationError(f"unknown source fields: {sorted(set(fields) - allowed)}")
+        project = self.load()
+        project.source.update(fields)
+        self.save(project)
+        return project
+
     def add_consent(self, record: ConsentRecord) -> ConsentRecord:
         project = self.load()
         project.consent.append(record)

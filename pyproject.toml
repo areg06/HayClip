@@ -6,14 +6,22 @@ requires-python = ">=3.10"
 dependencies = [
   "numpy>=1.26",
   "opencv-python-headless>=4.9",
+  "psycopg[binary]>=3.2",
+  "fastapi>=0.115",
+  "uvicorn>=0.30",
+  "jinja2>=3.1",
+  "python-multipart>=0.0.9",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "httpx>=0.27", "git-filter-repo==2.47.0"]
 whisper = ["faster-whisper>=1.1,<2"]
 
 [tool.setuptools]
-packages = ["hayclips", "hayclips.sources", "hayclips.transcription", "hayclips.media", "hayclips.captions"]
+packages = ["hayclips", "hayclips.sources", "hayclips.transcription", "hayclips.media", "hayclips.captions", "hayclips.jobs", "hayclips.web"]
+
+[tool.setuptools.package-data]
+hayclips = ["migrations/*.sql", "web/templates/*.html", "web/static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
