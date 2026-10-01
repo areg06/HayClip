@@ -1,0 +1,23 @@
+[project]
+name = "hayclips"
+version = "0.2.0"
+description = "Local operator pipeline: long Armenian conversations -> reviewable vertical clips"
+requires-python = ">=3.10"
+dependencies = [
+  "numpy>=1.26",
+  "opencv-python-headless>=4.9",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+whisper = ["faster-whisper>=1.1,<2"]
+
+[tool.setuptools]
+packages = ["hayclips", "hayclips.sources", "hayclips.transcription", "hayclips.media", "hayclips.captions"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+  "local_fixture: needs gitignored fixtures cut from pilot-03 (skipped when absent)",
+  "slow: renders real video with ffmpeg",
+]
