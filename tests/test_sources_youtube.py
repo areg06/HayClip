@@ -175,3 +175,20 @@ def test_ytdlp_timeout_kills_and_cleans_partials(fake, monkeypatch, tmp_path):
     assert not dest.parent.exists() or list(dest.parent.iterdir()) == []
     with pytest.raises(ToolTimeout):
         YouTubeSource(VID, settings=settings).inspect()
+
+
+# --- found by the live yt-dlp validation on 2026-10-01 ----------------------------------------------
+
+def test_real_unavailable_message_is_permanent():
+    """yt-dlp 2026.08.19 says 'This video is unavailable' (not 'Video unavailable')."""
+    from hayclips import proc
+    from hayclips.sources.youtube import _error_from
+    err = _error_from(proc.ToolError("yt-dlp", "exited with code 1", 1,
+                                     "ERROR: [youtube] aaaaaaaaaaa: This video is unavailable\n"))
+    assert err.permanent is True and "temporary" not in err.hint
+
+
+def test_caption_languages_exclude_auto_translations():
+    from hayclips.sources.youtube import _caption_languages
+    meta = {"automatic_captions": {"hy-orig": [], "hy": [], "aa": [], "en": []}, "subtitles": {"ru": []}}
+    assert _caption_languages(meta) == ["hy", "hy-orig", "ru"]

@@ -38,7 +38,7 @@ DOWNLOAD_ATTEMPTS = 3
 RETRY_BACKOFF_SECONDS = 0.5
 
 PERMANENT_ERRORS = [
-    (re.compile(r"video unavailable|not available|has been removed|private video|does not exist|"
+    (re.compile(r"video unavailable|video is unavailable|not available|has been removed|private video|does not exist|"
                 r"account associated with this video has been terminated", re.I),
      "the video is unavailable or private", "check the link in a browser; the creator may have removed or restricted it"),
     (re.compile(r"sign in|members-only|join this channel|confirm your age|not a bot", re.I),
@@ -88,6 +88,16 @@ def canonical_url(video_id: str) -> str:
     if not VIDEO_ID.fullmatch(video_id):
         raise ValidationError("bad video id")
     return f"https://www.youtube.com/watch?v={video_id}"
+
+
+def _caption_languages(meta: dict) -> list[str]:
+    """Original-language auto captions (e.g. hy-orig and hy) plus manual subtitles.
+
+    yt-dlp also lists every machine auto-translation (aa, ab, af, ...); those are not real captions."""
+    auto = set(meta.get("automatic_captions") or {})
+    orig = {k for k in auto if k.endswith("-orig")}
+    keep = orig | {k[:-len("-orig")] for k in orig if k[:-len("-orig")] in auto}
+    return sorted(keep | set(meta.get("subtitles") or {}))
 
 
 def _template(path: Path) -> str:
@@ -151,7 +161,7 @@ class YouTubeSource:
             raise SourceError(f"source is about {size / 1024**3:.1f} GB, over the "
                               f"{limits.max_source_bytes / 1024**3:.1f} GB limit",
                               hint="raise HAYCLIPS_MAX_SOURCE_BYTES if this is intended")
-        langs = sorted(set(meta.get("automatic_captions") or {}) | set(meta.get("subtitles") or {}))
+        langs = _caption_languages(meta)
         return SourceInfo(kind=self.kind, ref=self.video_id, url=self.url, title=meta.get("title", ""),
                           duration=float(duration), size_estimate=size, caption_languages=langs)
 
