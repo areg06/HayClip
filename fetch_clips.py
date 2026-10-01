@@ -15,9 +15,9 @@ from hayclips.project import ProjectRepo
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 1:
+    if len(argv) != 1 or argv[0] in ("-h", "--help"):
         print(__doc__.strip(), file=sys.stderr)
-        return 2
+        return 0 if argv and argv[0] in ("-h", "--help") else 2
     repo = ProjectRepo(Path(argv[0]))
     try:
         results = fetch_project(repo)

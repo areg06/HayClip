@@ -73,7 +73,7 @@ class ProjectRepo:
         self.ensure_not_legacy()
         if not self.exists():
             raise ValidationError(f"no {PROJECT_FILE} in {self.root}",
-                                  hint="create one with `python -m hayclips init` or run clipper.py --out first")
+                                  hint="create it with `.venv/bin/python clipper.py --srt ... --duration ... --out <project>`")
         return Project.from_dict(jsonio.read_json(self.project_path))
 
     def save(self, project: Project) -> None:
