@@ -23,7 +23,9 @@ def dsn() -> str:
     return os.environ.get("HAYCLIPS_DATABASE_URL") or default_dsn()
 
 
-def connect(conninfo: str | None = None, autocommit: bool = False) -> psycopg.Connection:
+def connect(conninfo: str | None = None, autocommit: bool = True) -> psycopg.Connection:
+    """Autocommit by default: plain reads never leave a transaction open, and every
+    `with conn.transaction():` block is a real transaction (not a savepoint inside an implicit one)."""
     return psycopg.connect(conninfo or dsn(), row_factory=dict_row, autocommit=autocommit)
 
 
