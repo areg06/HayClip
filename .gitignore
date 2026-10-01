@@ -9,3 +9,12 @@ pilot-*/
 *.m4a
 *.wav
 .env
+# creator-derived stills/scripts in research samples (keep generator scripts only)
+research/caption-samples/*.png
+research/caption-samples/*.ass
+research/visual-samples/*.jpg
+research/visual-samples/crop_x_expr.txt
+# local-only test fixtures cut from creator media (founder-approved, never in git)
+tests/fixtures/local/
+.pytest_cache/
+*.egg-info/
