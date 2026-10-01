@@ -110,9 +110,9 @@ text cannot inject caption formatting. There is no emoji (libass cannot render c
 
 | Pilot | Source | State |
 |---|---|---|
-| `pilot-01` | pilot-01 show (stand-up) | migrated; consent recorded; segment timestamps; letterbox (no landscape window) |
-| `pilot-02` | Podcast, pilot02vid0 | migrated; **no consent record** (cannot be sent to Harmar again); letterbox |
-| `pilot-03` | pilot-03 podcast | migrated; consent recorded; word timestamps; speaker crop; **regression reference** |
+| `pilot-01` | stand-up show episode | migrated; consent recorded; segment timestamps; letterbox (no landscape window) |
+| `pilot-02` | podcast episode | migrated; **no consent record** (cannot be sent to Harmar again); letterbox |
+| `pilot-03` | podcast episode (90 min) | migrated; consent recorded; word timestamps; speaker crop; **regression reference** |
 
 Harmar trial balance after pilot-03: 133 s. Phase 1a details: `docs/saas/phase-1a-report.md`.
 

@@ -205,7 +205,7 @@ The suite collects 189 tests (several are parametrized) in 15 modules. Every tes
 **Rules for the run:**
 - The founder's restriction applied: no Harmar request of any kind.
 - `HARMAR_API_KEY` and `HAYCLIPS_ALLOW_PAID_HARMAR` were unset for the whole run, and the paid ledger is still empty.
-- Source: the consented pilot-03 video (`abcDEF12345`).
+- Source: the consented pilot-03 video (id kept out of the public repo).
 - The run used a scratch project outside the repo, built with the real CLIs: `clipper.py` → `hayclips select` → `hayclips consent` → `fetch_clips.py`.
 - Tool versions: yt-dlp 2026.08.19 and the installed ffmpeg.
 
