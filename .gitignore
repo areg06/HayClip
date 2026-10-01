@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+output/
+pilot-*/
+*.mp4
+*.mov
+*.webm
+*.mp3
+*.m4a
+*.wav
+.env
