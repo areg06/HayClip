@@ -1,48 +1,40 @@
-"""Download only the picked windows of a consented YouTube video and render padded 720x1280 clips.
+"""Download only the selected windows of a consented YouTube video.
 
-Usage: python3 fetch_clips.py pilot-03
-Reads suggestions.json (start, end, source, optional pad seconds, default 5). Each window is fetched
-with `pad` seconds on both sides so burn_captions.py can re-snap the cut to Harmar's sentence edges
-without a second Harmar job. clip_NN.mp4 is the letterboxed preview that goes to Harmar;
-clip_NN.wide.mp4 keeps the landscape window (only this window, never the full episode) so
-burn_captions.py can crop a full-frame 9:16 speaker shot from it.
+Usage: .venv/bin/python fetch_clips.py pilot-04
+For each selected clip in project.json (display order) this writes clips/<clip_id>/wide.mp4 (landscape
+window with `pad` seconds on both sides, for rendering), audio.m4a (the exact bytes Harmar will be sent)
+and window.json (their sha256 hashes). Already fetched clips are verified and skipped; recorded files
+are never overwritten. See hayclips/fetch.py.
 """
-import json
-import subprocess
 import sys
 from pathlib import Path
 
-import clipper as c
+from hayclips.errors import PipelineError
+from hayclips.fetch import fetch_project
+from hayclips.project import ProjectRepo
 
-pilot = Path(sys.argv[1]).resolve()
-sug = json.loads((pilot / "suggestions.json").read_text(encoding="utf-8"))
-captions = sorted((pilot / "source").glob("*.srt"))
-lines = c.load_srt(captions[0]) if captions else []
-for i, s in enumerate(sug, 1):
-    name = f"clip_{i:02}"
-    out = pilot / f"{name}.mp4"
-    pad = float(s.setdefault("pad", 5.0))
-    a, b = max(0.0, s["start"] - pad), s["end"] + pad
-    s["pad_start"] = s["start"] - a          # actual padding before the planned start
-    if lines:  # free YouTube captions for the planned window, for comparison in review.html
-        c.clip_subtitles(lines, c.Clip(s["start"], s["end"], 0, ""), pilot / f"{name}.youtube.srt")
-    wide = pilot / f"{name}.wide.mp4"      # landscape source window, kept for vertical reframing
-    for attempt in range(3):  # section downloads sometimes drop mid-stream; retry from scratch
-        if wide.exists():
-            break
-        for part in pilot.glob(f"{name}.wide*"):
-            part.unlink()
-        subprocess.run(["yt-dlp", "-q", "--no-warnings", "-f", "bv*[height<=1080]+ba/b[height<=1080]",
-                        "--download-sections", f"*{a:.2f}-{b:.2f}", "--force-keyframes-at-cuts",
-                        "--merge-output-format", "mp4", "-o", str(wide), s["source"]])
-    else:
-        if not wide.exists():
-            raise SystemExit(f"{name}: section download failed 3 times")
-    if abs(c.duration_of(wide) - (b - a)) > 0.5:
-        raise SystemExit(f"{name}.wide.mp4 is {c.duration_of(wide):.2f}s, expected {b - a:.2f}s")
-    if out.exists():   # never re-render: harmar/ caches are keyed to this file's hash
-        print(f"{name}.mp4 exists; {wide.name} ready")
-        continue
-    c.export(wide, c.Clip(0, c.duration_of(wide), 0, ""), out, crf=18)
-    print(f"{name}.mp4: {c.duration_of(out):.2f}s (source {c.stamp(a)}-{c.stamp(b)})")
-(pilot / "suggestions.json").write_text(json.dumps(sug, ensure_ascii=False, indent=2), encoding="utf-8")
+
+def main(argv: list[str]) -> int:
+    if len(argv) != 1:
+        print(__doc__.strip(), file=sys.stderr)
+        return 2
+    repo = ProjectRepo(Path(argv[0]))
+    try:
+        results = fetch_project(repo)
+        project = repo.load()
+    except PipelineError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    failed = 0
+    for r in results:
+        clip = project.clip(r.clip_id)
+        if r.status == "error":
+            failed += 1
+            print(f"#{clip.order} {r.clip_id}: error\n  {r.error}", file=sys.stderr)
+        else:
+            print(f"#{clip.order} {r.clip_id}: {r.status} ({r.message})")
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
