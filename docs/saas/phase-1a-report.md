@@ -211,7 +211,7 @@ The suite collects 189 tests (several are parametrized) in 15 modules. Every tes
 
 | Check | Result |
 |---|---|
-| URL validation (live `YouTubeSource`) | `--exec=touch /tmp/pwn`, `-o/tmp/x`, a foreign host carrying the same id, `file:///etc/passwd`, a playlist-only URL and a 10-character id were all rejected with `ValidationError` before any process started. `https://www.youtube.com/watch?v=abcDEF12345&t=30s` was accepted and canonicalised to `https://www.youtube.com/watch?v=abcDEF12345` |
+| URL validation (live `YouTubeSource`) | `--exec=touch /tmp/pwn`, `-o/tmp/x`, a foreign host carrying the same id, `file:///etc/passwd`, a playlist-only URL and a 10-character id were all rejected with `ValidationError` before any process started. the real link with `&t=30s` appended was accepted and canonicalised to `https://www.youtube.com/watch?v=<id>` |
 | `inspect()` (real YouTube metadata) | duration 5400 s, title correct, size estimate 369 MB (under the 4 GB limit), duration under the 3 h limit |
 | Window request | clip 1311.3–1330.0 s with 5 s padding gives source 1306.3–1335.0 s; `window.json` records `pad_start` 5.0 |
 | Landscape clip `wide.mp4` | 1920x1080 h264 with 48 kHz stereo AAC, **28.70 s** (planned 28.70 s), 5.0 MB. Downloaded in 25 s wall time |
