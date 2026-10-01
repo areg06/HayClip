@@ -199,3 +199,46 @@ The suite collects 189 tests (several are parametrized) in 15 modules. Every tes
    - a review page with A/B/C on demand, hook/trim edit and re-render, and a "would post / minutes to fix" form;
    - downloads.
 5. **Keep the CLI working** against the same database through the repository interface. Re-run the pilot-03 regression after every step.
+
+## 11. Live validation (2026-10-01, after approval; no Harmar call)
+
+**Rules for the run:**
+- The founder's restriction applied: no Harmar request of any kind.
+- `HARMAR_API_KEY` and `HAYCLIPS_ALLOW_PAID_HARMAR` were unset for the whole run, and the paid ledger is still empty.
+- Source: the consented pilot-03 video (`abcDEF12345`).
+- The run used a scratch project outside the repo, built with the real CLIs: `clipper.py` → `hayclips select` → `hayclips consent` → `fetch_clips.py`.
+- Tool versions: yt-dlp 2026.08.19 and the installed ffmpeg.
+
+| Check | Result |
+|---|---|
+| URL validation (live `YouTubeSource`) | `--exec=touch /tmp/pwn`, `-o/tmp/x`, a foreign host carrying the same id, `file:///etc/passwd`, a playlist-only URL and a 10-character id were all rejected with `ValidationError` before any process started. `https://www.youtube.com/watch?v=abcDEF12345&t=30s` was accepted and canonicalised to `https://www.youtube.com/watch?v=abcDEF12345` |
+| `inspect()` (real YouTube metadata) | duration 5400 s, title correct, size estimate 369 MB (under the 4 GB limit), duration under the 3 h limit |
+| Window request | clip 1311.3–1330.0 s with 5 s padding gives source 1306.3–1335.0 s; `window.json` records `pad_start` 5.0 |
+| Landscape clip `wide.mp4` | 1920x1080 h264 with 48 kHz stereo AAC, **28.70 s** (planned 28.70 s), 5.0 MB. Downloaded in 25 s wall time |
+| Window boundaries | The live `wide.mp4` audio was cross-correlated with pilot-03's earlier window of the same source range (`clip_02`, which starts at the same 1306.3 s). At 1, 12 and 24 s the lag is **0.0 ms with correlation 1.000**, so the cut starts exactly where it should |
+| Audio artifact `audio.m4a` | AAC 48 kHz stereo, 28.70 s, 467 KB. Its sha256 is recorded with `derived_from` = the wide sha256 and recipe `aac128k-v1` |
+| Audio ↔ wide timeline | Decoding both files fully gives a lag of **0.0 ms (corr 1.000)** at 1, 12 and 24 s. `hayclips.media.alignment.verify_alignment` returns `provenance` (0 ms), and the same check run as audio cross-correlation gives `xcorr` 0 ms with confidence 0.999 |
+| Preview artifact | Not generated, by design: new clips send `audio.m4a` to Harmar and render from `wide.mp4`, so no letterboxed preview is made |
+| `youtube.srt` per clip | written, with clip-relative times |
+| Idempotent re-run | a second `fetch_clips.py` reported "skipped (window already fetched and verified)": no download, exit 0 |
+| Timeout handling | `fetch_window` with a 3 s download timeout raised `ToolTimeout` ("timed out after 3s") in 5.7 s wall time. No files were left in the target folder and no yt-dlp processes kept running |
+| Error handling | An unavailable id (`aaaaaaaaaaa`) gave `SourceError`: "YouTube: the video is unavailable or private" with a "check the link" hint |
+
+**Bugs found live and fixed in `9486d27`, test first:**
+- yt-dlp 2026.08.19 says "This video is unavailable", which the permanent-error pattern did not match. The error was being reported as "often temporary; retry later".
+- `caption_languages` listed every machine auto-translation (aa, ab, af, …). It now lists only original-language captions (`hy`, `hy-orig`) and manual subtitles.
+
+**Observation:**
+- Seeking with ffmpeg's input `-ss` inside an `.m4a` file is a few ms to about 20 ms inaccurate at later offsets.
+- Our alignment check decodes whole files, so it is not affected.
+- Any future per-window seeking on M4A must decode from the start instead.
+
+**Not validated live, on purpose:**
+- the Harmar submission of `audio.m4a`;
+- the paid state machine against the real API.
+
+The fake-Harmar suite remains the only validation of that path until the founder authorises a paid test.
+
+**After the test:**
+- The scratch project's media (creator content) was deleted.
+- Its `window.json`, with the recorded hashes, was kept in the session scratchpad as evidence.
