@@ -13,7 +13,7 @@
       <video controls preload="metadata" playsinline src="/p/{{ row.id }}/media/{{ clip.id }}/{{ style }}.mp4"></video>
       <div data-zones></div>
     </div>
-    <div class="row" style="margin-top:12px;justify-content:center">
+    <div class="row u26">
       <div class="seg-toggle" role="group" aria-label="Preview platform" data-export-platforms data-zones-json='{{ zones_json }}'>
         <button type="button" data-platform="tiktok" aria-pressed="false">TikTok</button>
         <button type="button" data-platform="reels" aria-pressed="false">Reels</button>
@@ -23,20 +23,20 @@
     </div>
   </div>
   <div>
-    <dl class="facts" style="display:grid;grid-template-columns:140px 1fr;gap:8px 16px;margin:0 0 24px">
-      <dt class="muted">Format</dt><dd style="margin:0">9:16 · {{ info.outputs[style].width }}×{{ info.outputs[style].height }}</dd>
-      <dt class="muted">Duration</dt><dd style="margin:0">{{ info.outputs[style].duration | hms }}</dd>
-      <dt class="muted">Captions</dt><dd style="margin:0">{{ style_label }}{% if info.transcript_edited %} · text corrected by you{% else %} · not corrected{% endif %}</dd>
-      <dt class="muted">Hook</dt><dd style="margin:0" lang="hy">{{ info.hook or 'none' }}</dd>
-      {% if info.checks %}<dt class="muted">Check</dt><dd style="margin:0">{% for k in info.checks %}<div class="warn">{{ k }}</div>{% endfor %}</dd>{% endif %}
+    <dl class="facts u27">
+      <dt class="muted">Format</dt><dd class="u28">9:16 · {{ info.outputs[style].width }}×{{ info.outputs[style].height }}</dd>
+      <dt class="muted">Duration</dt><dd class="u28">{{ info.outputs[style].duration | hms }}</dd>
+      <dt class="muted">Captions</dt><dd class="u28">{{ style_label }}{% if info.transcript_edited %} · text corrected by you{% else %} · not corrected{% endif %}</dd>
+      <dt class="muted">Hook</dt><dd class="u28" lang="hy">{{ info.hook or 'none' }}</dd>
+      {% if info.checks %}<dt class="muted">Check</dt><dd class="u28">{% for k in info.checks %}<div class="warn">{{ k }}</div>{% endfor %}</dd>{% endif %}
     </dl>
     <div class="row">
       <a class="btn primary big" href="/p/{{ row.id }}/media/{{ clip.id }}/{{ style }}.mp4?download=1">Download MP4</a>
       <a class="btn" href="/p/{{ row.id }}/media/{{ clip.id }}/captions.srt?download=1">Download SRT</a>
     </div>
 
-    <h3 style="margin-top:40px">Add to calendar</h3>
-    <form method="post" action="/p/{{ row.id }}/clips/{{ clip.id }}/calendar" class="surface" style="max-width:520px">
+    <h3 class="u9">Add to calendar</h3>
+    <form method="post" action="/p/{{ row.id }}/clips/{{ clip.id }}/calendar" class="surface u29">
       {% include "_csrf.html" %}
       <div class="field-row">
         <div><label for="plan_date">Date</label><input id="plan_date" type="date" name="plan_date" required value="{{ today }}"></div>
@@ -46,12 +46,12 @@
       <div class="row">{% for p, label in [('tiktok', 'TikTok'), ('reels', 'Reels'), ('shorts', 'Shorts')] %}
         <label class="check"><input type="checkbox" name="platforms" value="{{ p }}"> {{ label }}</label>{% endfor %}</div>
       <label for="status">Status</label>
-      <select id="status" name="status" style="max-width:200px">{% for s in ['Draft', 'Editing', 'Ready', 'Scheduled'] %}<option {{ 'selected' if s == 'Ready' }}>{{ s }}</option>{% endfor %}</select>
+      <select class="u30" id="status" name="status">{% for s in ['Draft', 'Editing', 'Ready', 'Scheduled'] %}<option {{ 'selected' if s == 'Ready' }}>{{ s }}</option>{% endfor %}</select>
       <label for="note">Note</label><input id="note" type="text" name="note" maxlength="500" placeholder="Optional">
       <p class="help">Planning only: HayClips does not post anything.</p>
-      <p style="margin-top:12px"><button type="submit">Add to calendar</button></p>
+      <p class="u8"><button type="submit">Add to calendar</button></p>
     </form>
-    {% if items %}<p class="muted" style="margin-top:12px">Planned: {% for i in items %}{{ i.plan_date.strftime('%d %b') }} ({{ i.status }}){% if not loop.last %}, {% endif %}{% endfor %}</p>{% endif %}
+    {% if items %}<p class="muted u8">Planned: {% for i in items %}{{ i.plan_date.strftime('%d %b') }} ({{ i.status }}){% if not loop.last %}, {% endif %}{% endfor %}</p>{% endif %}
   </div>
 </div>
 <script src="/static/editor.js"></script>

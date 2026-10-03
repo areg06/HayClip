@@ -6,12 +6,12 @@
 {% if not rows %}
 <div class="surface"><p>No clips chosen yet.</p><a class="btn" href="/p/{{ row.id }}/candidates">Choose clips</a></div>
 {% else %}
-<section class="surface" style="max-width:720px">
-  <p style="font-size:20px;font-weight:600;margin:0" data-cost-summary>{{ n }} clip{{ '' if n == 1 else 's' }} selected · {{ total }}</p>
+<section class="surface u14">
+  <p class="u15" data-cost-summary>{{ n }} clip{{ '' if n == 1 else 's' }} selected · {{ total }}</p>
   {% if need_seconds %}<p class="muted" data-cost-transcribed>{{ need }} will be transcribed
     <span title="Each clip is transcribed with 5 seconds of margin on both sides so the cut can land on a sentence. Only these clips are sent, as audio.">ⓘ</span></p>
   {% else %}<p class="muted">Every chosen clip already has a transcript. Captions are added without new transcription.</p>{% endif %}
-  <table style="margin-top:16px"><tbody>
+  <table class="u16"><tbody>
   {% for r in rows %}<tr><td lang="hy">{{ r.clip.title or ('Clip ' ~ loop.index) }}</td><td class="muted">{{ r.clip.start | hms }}–{{ r.clip.end | hms }}</td>
     <td class="muted">{{ r.seconds | round | int }} s</td><td>{% if r.has_transcript %}<span class="pill ok">transcribed</span>{% endif %}</td></tr>{% endfor %}
   </tbody></table>
@@ -19,11 +19,11 @@
 
 {% if need_seconds %}
   {% if not paid_enabled %}
-  <div class="notice bad" role="alert" style="max-width:720px">Paid transcription is disabled in this environment.</div>
+  <div class="notice bad u14" role="alert">Paid transcription is disabled in this environment.</div>
   {% elif unknowns %}
-  <div class="notice bad" style="max-width:720px">A previous submission needs checking before anything new is sent. See the project's transcription page.</div>
+  <div class="notice bad u14">A previous submission needs checking before anything new is sent. See the project's transcription page.</div>
   {% elif not consent %}
-  <section class="surface" style="max-width:720px;margin-top:24px">
+  <section class="surface u17">
     <h2>Creator permission</h2>
     <p class="muted">Before audio of these clips is sent for transcription, record that the creator agreed.</p>
     <form method="post" action="/p/{{ row.id }}/consent">
@@ -31,22 +31,22 @@
       <label>Who agreed (creator or channel)</label><input type="text" name="granted_by" required maxlength="200">
       <label>How and when</label><input type="text" name="statement" required maxlength="2000">
       <label>Your name</label><input type="text" name="recorded_by" required maxlength="100">
-      <p style="margin-top:12px"><label class="check"><input type="checkbox" name="confirm" value="yes" required> The creator agreed that clips of this video may be transcribed.</label></p>
-      <p style="margin-top:12px"><button type="submit">Record permission</button></p>
+      <p class="u8"><label class="check"><input type="checkbox" name="confirm" value="yes" required> The creator agreed that clips of this video may be transcribed.</label></p>
+      <p class="u8"><button type="submit">Record permission</button></p>
     </form>
   </section>
   {% elif budget_error %}
-  <div class="notice bad" style="max-width:720px">{{ budget_error }}</div>
+  <div class="notice bad u14">{{ budget_error }}</div>
   {% else %}
-  <form method="post" action="/p/{{ row.id }}/captions" class="surface" style="max-width:720px;margin-top:24px">
+  <form method="post" action="/p/{{ row.id }}/captions" class="surface u17">
     {% include "_csrf.html" %}
     <label class="check"><input type="checkbox" name="i_understand" value="yes" required> Transcribe {{ need }} of audio from these {{ n }} clip{{ '' if n == 1 else 's' }}. This is charged.</label>
-    <label>Your name</label><input type="text" name="confirmed_by" required maxlength="100" style="max-width:320px">
-    <p style="margin-top:16px"><button class="primary big" type="submit" {{ '' if key_present else 'disabled' }}>Add captions</button></p>
+    <label>Your name</label><input class="u18" type="text" name="confirmed_by" required maxlength="100">
+    <p class="u16"><button class="primary big" type="submit" {{ '' if key_present else 'disabled' }}>Add captions</button></p>
   </form>
   {% endif %}
 {% else %}
-  <form method="post" action="/p/{{ row.id }}/captions" style="margin-top:24px">
+  <form class="u5" method="post" action="/p/{{ row.id }}/captions">
     {% include "_csrf.html" %}<button class="primary big" type="submit">Add captions</button>
   </form>
 {% endif %}

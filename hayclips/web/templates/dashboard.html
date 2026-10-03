@@ -18,19 +18,19 @@
   </a>
   {% endfor %}
 </div>
-{% if projects | length > 8 %}<p class="muted" style="margin-top:16px"><a href="/projects">All projects →</a></p>{% endif %}
+{% if projects | length > 8 %}<p class="muted u16"><a href="/projects">All projects →</a></p>{% endif %}
 {% else %}
-<div class="surface" style="text-align:center;padding:72px 24px">
+<div class="surface u19">
   <h2>No videos yet</h2>
   <p class="muted">Add a long Armenian video and HayClips will suggest moments to turn into shorts.</p>
   <a class="btn primary" href="/new">New video</a>
 </div>
 {% endif %}
 {% if registrable %}
-<details style="margin-top:32px"><summary>Open an existing pilot folder</summary>
-  <form method="post" action="/projects/register" class="row" style="margin-top:8px">
+<details class="u20"><summary>Open an existing pilot folder</summary>
+  <form method="post" action="/projects/register" class="row u2">
     {% include "_csrf.html" %}
-    <select name="dir" aria-label="pilot folder" style="max-width:220px">{% for d in registrable %}<option>{{ d }}</option>{% endfor %}</select>
+    <select class="u21" name="dir" aria-label="pilot folder">{% for d in registrable %}<option>{{ d }}</option>{% endfor %}</select>
     <button type="submit">Open</button>
   </form>
 </details>

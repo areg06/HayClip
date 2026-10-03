@@ -18,7 +18,7 @@
   </div>
   {% endfor %}{% endfor %}
 </div>
-<section style="margin-top:40px">
+<section class="u9">
   <h2>Coming up</h2>
   {% if upcoming %}
   <table><tbody>
@@ -27,7 +27,7 @@
     <td>{{ it.plan_date.strftime('%a %d %b') }}{% if it.plan_time %} · {{ it.plan_time.strftime('%H:%M') }}{% endif %}</td>
     <td lang="hy"><a href="/p/{{ it.project_id }}/clips/{{ it.clip_id }}/export">{{ it.title }}</a><div class="muted">{{ it.project_name }}{% if it.platforms %} · {{ it.platforms | join(', ') }}{% endif %}{% if it.note %} · {{ it.note }}{% endif %}</div></td>
     <td><form method="post" action="/calendar/{{ it.id }}" class="row">{% include "_csrf.html" %}
-      <select name="status" aria-label="Status" style="width:auto">{% for s in statuses %}<option {{ 'selected' if s == it.status }}>{{ s }}</option>{% endfor %}</select>
+      <select class="u4" name="status" aria-label="Status">{% for s in statuses %}<option {{ 'selected' if s == it.status }}>{{ s }}</option>{% endfor %}</select>
       <button type="submit" class="small">Update</button>
       <button type="submit" class="small ghost danger" name="delete" value="1">Remove</button></form></td>
   </tr>

@@ -38,7 +38,7 @@ REPO_ROOT = HERE.parents[1]
 CLIP_ID = re.compile(r"^clp_[0-9a-f]{10}$")
 PROJECT_ID = re.compile(r"^prj_[0-9a-f]{10}$")
 MEDIA = {  # public name -> path inside clips/<id>/
-    "A.mp4": "render/A.mp4", "B.mp4": "render/B.mp4", "C.mp4": "render/C.mp4",
+    "A.mp4": "render/A.mp4", "B.mp4": "render/B.mp4", "C.mp4": "render/C.mp4", "L.mp4": "render/L.mp4",
     "captions.srt": "render/captions.srt", "wide.mp4": "wide.mp4", "preview.mp4": "preview.mp4",
 }
 PILOT_DIR = re.compile(r"^pilot-\d{2}$")

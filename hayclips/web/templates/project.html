@@ -13,7 +13,7 @@
 </div>
 {% if active_jobs %}<span data-refresh-while-busy hidden></span>{% endif %}
 
-<section class="surface" style="margin-bottom:40px" data-next-action>
+<section class="surface u32" data-next-action>
   {% if stage.stage == 'Finding clips' %}
     <h2>Finding moments…</h2><p class="muted">This page updates by itself. It usually takes under a minute.</p>
   {% elif stage.stage == 'Adding captions' %}
@@ -43,14 +43,14 @@
   <div class="grid-clips">
   {% for x in chosen %}{% set c = x.clip %}
     <div class="clipcard" data-clip="{{ c.id }}">
-      <a href="{{ '/p/' ~ row.id ~ '/clips/' ~ c.id ~ '/editor' if x.transcribed else '/p/' ~ row.id ~ '/candidates' }}" style="text-decoration:none">
+      <a class="u33" href="{{ '/p/' ~ row.id ~ '/clips/' ~ c.id ~ '/editor' if x.transcribed else '/p/' ~ row.id ~ '/candidates' }}">
       <div class="vframe">{% if x.rendered %}<video preload="metadata" muted playsinline src="/p/{{ row.id }}/media/{{ c.id }}/{{ x.rendered[0] }}.mp4#t=1"></video>
         {% else %}<div class="empty-thumb">{{ 'Captions not added yet' if not x.transcribed else 'Not rendered yet' }}</div>{% endif %}</div></a>
       <div class="title" lang="hy">{{ c.title or 'Clip ' ~ loop.index }}</div>
       <div class="row between"><span class="muted">{{ (c.end - c.start) | round | int }} s</span>
         {% if x.scheduled %}<span class="pill ok">Scheduled</span>{% elif x.rendered and x.reviewed %}<span class="pill ok">Ready</span>
         {% elif x.rendered %}<span class="pill warn">Editing</span>{% elif x.transcribed %}<span class="pill warn">Captioned</span>{% else %}<span class="pill">Chosen</span>{% endif %}</div>
-      {% if x.transcribed %}<div class="row" style="margin-top:6px"><a class="btn small" href="/p/{{ row.id }}/clips/{{ c.id }}/editor">Edit</a>
+      {% if x.transcribed %}<div class="row u34"><a class="btn small" href="/p/{{ row.id }}/clips/{{ c.id }}/editor">Edit</a>
         {% if x.rendered %}<a class="btn small ghost" href="/p/{{ row.id }}/clips/{{ c.id }}/export">Export</a>{% endif %}</div>{% endif %}
     </div>
   {% endfor %}
@@ -58,10 +58,10 @@
 </section>
 {% endif %}
 
-<details style="margin-top:24px">
+<details class="u5">
   <summary>Activity and advanced controls</summary>
-  <div style="margin-top:16px" data-poll="/p/{{ row.id }}/jobs">{% include "_jobs.html" %}</div>
-  <div class="stack" style="margin-top:24px">
+  <div class="u16" data-poll="/p/{{ row.id }}/jobs">{% include "_jobs.html" %}</div>
+  <div class="stack u5">
     <form method="post" action="/p/{{ row.id }}/jobs/import_captions" class="inline">{% include "_csrf.html" %}<button type="submit" class="small">Fetch free captions</button></form>
     <form method="post" action="/p/{{ row.id }}/jobs/generate_candidates">
       {% include "_csrf.html" %}

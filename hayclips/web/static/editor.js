@@ -130,9 +130,11 @@
     var c = [(r.left - b.left) / b.width, (r.top - b.top) / b.height, (r.right - b.left) / b.width, (r.bottom - b.top) / b.height];
     var hits = zones.filter(function (z) { return c[0] < z.box[2] && c[2] > z.box[0] && c[1] < z.box[3] && c[3] > z.box[1]; });
     if (hits.length) {
+      warn.classList.remove("ok");
       warn.textContent = "Captions overlap the " + D.zones[platform].label + " " + hits.map(function (z) { return z.name; }).join(" and ") + " area.";
       moveSafe.classList.remove("hidden");
     } else {
+      warn.classList.add("ok");
       warn.textContent = platform ? "Captions are clear of " + D.zones[platform].label + " UI." : "";
       moveSafe.classList.add("hidden");
     }

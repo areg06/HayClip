@@ -18,7 +18,7 @@
       <div class="hook-overlay" data-hook-box role="button" tabindex="0" aria-label="Hook position. Drag to move." lang="hy"></div>
       <div data-zones></div>
     </div>
-    <div class="row between" style="margin-top:12px">
+    <div class="row between u8">
       <div class="row"><button type="button" class="small" data-playpause>Play</button><span class="muted" data-time>0:00</span></div>
       <div class="seg-toggle" role="group" aria-label="Preview platform">
         <button type="button" data-platform="tiktok" aria-pressed="false">TikTok</button>
@@ -45,7 +45,7 @@
           {% for key, label in presets.items() %}
           <label class="preset"><input type="radio" name="preset" value="{{ key }}" {{ 'checked' if data.look.preset == key }}>
             <div class="sample st-{{ {'clean': 'L', 'active': 'A', 'punch': 'B', 'karaoke': 'C'}[key] }}" lang="hy">
-              {% if key == 'active' %}Սա <span class="hl">կարևոր</span>{% elif key == 'punch' %}ԿԱՐԵՎՈՐ{% elif key == 'karaoke' %}<span>Սա կարևոր է</span>{% else %}Սա կարևոր է{% endif %}</div>
+              {% if key == 'active' %}Սա <span class="hl">կարևոր</span>{% elif key == 'punch' %}Կարևոր{% elif key == 'karaoke' %}<span>Սա կարևոր է</span>{% else %}Սա կարևոր է{% endif %}</div>
             <div class="name">{{ label }}</div></label>
           {% endfor %}
         </div>
@@ -53,31 +53,31 @@
         <div class="slider-row"><input id="size" type="range" name="size" min="0.6" max="1.6" step="0.05" value="{{ data.look.size }}" data-look="size"><span class="muted" data-size-label></span></div>
         <p class="help">Drag the caption on the video to move it.</p>
         <input type="hidden" name="x" value="{{ data.look.x }}" data-look="x"><input type="hidden" name="y" value="{{ data.look.y }}" data-look="y">
-        <details style="margin-top:12px"><summary>More style options</summary>
+        <details class="u8"><summary>More style options</summary>
           <div class="field-row">
             <div><label>Text colour</label><input class="swatch" type="color" name="color" value="{{ data.look.color }}" data-look="color"></div>
             <div><label>Highlight</label><input class="swatch" type="color" name="highlight" value="{{ data.look.highlight }}" data-look="highlight"></div>
-            <div><label>Words per line</label><input type="number" name="words_per_line" min="1" max="8" value="{{ data.look.words_per_line or '' }}" placeholder="auto" data-look="words_per_line" style="max-width:120px"></div>
+            <div><label>Words per line</label><input class="u22" type="number" name="words_per_line" min="1" max="8" value="{{ data.look.words_per_line or '' }}" placeholder="auto" data-look="words_per_line"></div>
           </div>
-          <p style="margin-top:12px"><label class="check"><input type="checkbox" name="background" {{ 'checked' if data.look.background }} data-look="background"> Background box</label></p>
+          <p class="u8"><label class="check"><input type="checkbox" name="background" {{ 'checked' if data.look.background }} data-look="background"> Background box</label></p>
         </details>
-        <p style="margin-top:16px"><button type="submit" data-save-look>Save style</button> <span class="muted" data-unsaved></span></p>
+        <p class="u16"><button type="submit" data-save-look>Save style</button> <span class="muted" data-unsaved></span></p>
       </form>
 
       <h3>Hook</h3>
       <form method="post" action="/p/{{ row.id }}/clips/{{ clip.id }}/hook" data-hook-form>
         {% include "_csrf.html" %}
         <input type="text" name="hook" maxlength="45" value="{{ clip.hook }}" placeholder="Short line shown at the start" lang="hy" data-hook-text aria-label="Hook text">
-        <div class="row" style="margin-top:8px">
+        <div class="row u2">
           <label class="check"><input type="checkbox" name="show" {{ 'checked' if data.hook_look.show }} data-hook-show> Show</label>
-          <label class="check">for <input type="number" name="duration" min="1" max="10" step="0.5" value="{{ data.hook_look.duration }}" style="width:80px" data-hook-duration> s</label>
+          <label class="check">for <input class="u23" type="number" name="duration" min="1" max="10" step="0.5" value="{{ data.hook_look.duration }}" data-hook-duration> s</label>
         </div>
         <input type="hidden" name="x" value="{{ data.hook_look.x }}" data-hook-x><input type="hidden" name="y" value="{{ data.hook_look.y }}" data-hook-y>
         <p class="help">Up to 45 characters. Drag it on the video. It must quote the speaker faithfully.</p>
         <p><button type="submit">Save hook</button></p>
       </form>
 
-      <details style="margin-top:24px" data-text-editor><summary>Edit caption text</summary>
+      <details class="u5" data-text-editor><summary>Edit caption text</summary>
         <p class="help">Fix wrong words. Timing stays the same; nothing is transcribed again.</p>
         {% for sg in data.segments %}
         <form method="post" action="/p/{{ row.id }}/clips/{{ clip.id }}/transcript" class="seg">
@@ -95,9 +95,9 @@
       <form method="post" action="/p/{{ row.id }}/clips/{{ clip.id }}/edit" data-trim-form>
         {% include "_csrf.html" %}<input type="hidden" name="from" value="editor">
         <div class="trim">
-          <div class="range-row"><span style="width:40px">Start</span><input type="range" step="0.05" min="0" max="{{ data.cut.window }}" value="{{ data.cut.start }}" data-cut="start" aria-label="Clip start">
+          <div class="range-row"><span class="u12">Start</span><input type="range" step="0.05" min="0" max="{{ data.cut.window }}" value="{{ data.cut.start }}" data-cut="start" aria-label="Clip start">
             <button type="button" class="small ghost" data-cut-nudge="start" data-by="-0.1" aria-label="Start earlier">−</button><button type="button" class="small ghost" data-cut-nudge="start" data-by="0.1" aria-label="Start later">+</button></div>
-          <div class="range-row"><span style="width:40px">End</span><input type="range" step="0.05" min="0" max="{{ data.cut.window }}" value="{{ data.cut.end }}" data-cut="end" aria-label="Clip end">
+          <div class="range-row"><span class="u12">End</span><input type="range" step="0.05" min="0" max="{{ data.cut.window }}" value="{{ data.cut.end }}" data-cut="end" aria-label="Clip end">
             <button type="button" class="small ghost" data-cut-nudge="end" data-by="-0.1" aria-label="End earlier">−</button><button type="button" class="small ghost" data-cut-nudge="end" data-by="0.1" aria-label="End later">+</button></div>
           <p class="muted" data-cut-label></p>
         </div>
@@ -113,11 +113,11 @@
       <form method="post" action="/p/{{ row.id }}/clips/{{ clip.id }}/crop" data-crop-form>
         {% include "_csrf.html" %}
         {% for sh in data.crop.shots %}
-        <div class="slider-row" style="margin:8px 0"><span class="muted" style="width:96px">Shot {{ loop.index }} · {{ (sh.start - data.cut.start) | hms if sh.start > data.cut.start else '0:00' }}</span>
+        <div class="slider-row u24"><span class="muted u25">Shot {{ loop.index }} · {{ (sh.start - data.cut.start) | hms if sh.start > data.cut.start else '0:00' }}</span>
           <input type="range" name="x_{{ sh.index }}" min="0" max="{{ data.crop.width - data.crop.crop_w }}" step="2" value="{{ sh.x }}" data-shot="{{ sh.index }}" aria-label="Frame position for shot {{ loop.index }}">
           {% if sh.x != sh.auto_x %}<span class="tag">moved</span>{% endif %}</div>
         {% endfor %}
-        <p class="row" style="margin-top:12px"><button type="submit">Save framing</button>
+        <p class="row u8"><button type="submit">Save framing</button>
           <button type="submit" class="ghost" name="reset" value="1">Reset to automatic</button></p>
       </form>
       {% else %}<p class="muted">Framing controls appear after the first render.</p>{% endif %}

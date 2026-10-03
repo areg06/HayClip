@@ -255,3 +255,53 @@ footer.site .inner { max-width: var(--maxw); margin: 0 auto; padding: var(--s5);
   .hero h1 { font-size: 34px; }
   .presets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* ---- review page (operator review; kept from Phase 1c, restyled) ---- */
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); padding: var(--s5); margin: var(--s5) 0; box-shadow: var(--shadow-1); }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 300px)); gap: var(--s5); }
+.grid figure { margin: 0; } figcaption { color: var(--ink-2); font-size: var(--t-xs); margin-bottom: var(--s1); }
+.grid figure video { aspect-ratio: 9 / 16; object-fit: cover; }
+.checks { border-radius: var(--r-md); padding: var(--s3) var(--s4); background: var(--warn-soft); color: #7A4D12; font-size: var(--t-sm); margin: var(--s3) 0; }
+.checks ul { margin: var(--s1) 0 0; }
+.downloads { margin: var(--s4) 0; }
+a.button { display: inline-flex; align-items: center; padding: 8px 14px; border-radius: var(--r-pill); border: 1px solid var(--line); background: var(--surface); text-decoration: none; font-size: var(--t-sm); font-weight: 550; }
+label.choice { display: inline-flex; gap: 6px; align-items: center; color: var(--ink); background: #F0F0EE; padding: 6px 12px; border-radius: var(--r-pill); margin: 0; }
+ul.plain { list-style: none; padding-left: 0; }
+
+/* ---- utility classes generated from former inline styles (CSP forbids style attributes) ---- */
+.u1 { max-width:640px; }
+.u2 { margin-top:8px; }
+.u3 { max-width:240px; }
+.u4 { width:auto; }
+.u5 { margin-top:24px; }
+.u6 { margin-top:48px;max-width:640px; }
+.u7 { max-height:64px;border-radius:8px;border:1px solid var(--line);background:#FFFFFF;padding:6px; }
+.u8 { margin-top:12px; }
+.u9 { margin-top:40px; }
+.u10 { text-align:center;padding:56px 24px; }
+.u11 { list-style:none;padding:0;margin:0; }
+.u12 { width:40px; }
+.u13 { color:#FFFFFF; }
+.u14 { max-width:720px; }
+.u15 { font-size:20px;font-weight:600;margin:0; }
+.u16 { margin-top:16px; }
+.u17 { max-width:720px;margin-top:24px; }
+.u18 { max-width:320px; }
+.u19 { text-align:center;padding:72px 24px; }
+.u20 { margin-top:32px; }
+.u21 { max-width:220px; }
+.u22 { max-width:120px; }
+.u23 { width:80px; }
+.u24 { margin:8px 0; }
+.u25 { width:96px; }
+.u26 { margin-top:12px;justify-content:center; }
+.u27 { display:grid;grid-template-columns:140px 1fr;gap:8px 16px;margin:0 0 24px; }
+.u28 { margin:0; }
+.u29 { max-width:520px; }
+.u30 { max-width:200px; }
+.u31 { margin-top:16px;max-width:640px; }
+.u32 { margin-bottom:40px; }
+.u33 { text-decoration:none; }
+.u34 { margin-top:6px; }
+.safe-warn.ok { color: var(--ok); }
+.preset .sample { font-size: 12px; }

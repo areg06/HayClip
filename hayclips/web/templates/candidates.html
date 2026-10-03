@@ -12,7 +12,7 @@
 {% if busy %}<span data-refresh-while-busy hidden></span>{% endif %}
 {% if finding %}<div class="notice calm">Finding moments… this page updates by itself.</div>{% endif %}
 {% if not cands and not finding %}
-<div class="surface" style="text-align:center;padding:56px 24px">
+<div class="surface u10">
   <h2>No moments yet</h2>
   <p class="muted">Go back to the project and start “Find clips”.</p>
   <a class="btn" href="/p/{{ row.id }}">Back to project</a>
@@ -39,7 +39,7 @@
       <p class="excerpt" lang="hy">{{ c.text[:240] }}{% if c.text | length > 240 %}…{% endif %}</p>
       {% if x.parts %}
       <details><summary>Why this moment</summary>
-        <ul class="plain" style="list-style:none;padding:0;margin:0">{% for label, pts in x.parts %}<li class="muted"><span class="{{ 'ok' if pts > 0 else 'bad' }}">{{ '%+.1f' | format(pts) }}</span> {{ label }}</li>{% endfor %}</ul>
+        <ul class="plain u11">{% for label, pts in x.parts %}<li class="muted"><span class="{{ 'ok' if pts > 0 else 'bad' }}">{{ '%+.1f' | format(pts) }}</span> {{ label }}</li>{% endfor %}</ul>
       </details>
       {% endif %}
       {% if x.preview %}
@@ -47,9 +47,9 @@
         <div class="wframe"><video preload="metadata" src="/p/{{ row.id }}/previews/{{ c.id }}/preview.mp4" playsinline></video></div>
         {% if not x.locked %}
         <div class="trim" data-trim>
-          <div class="range-row"><span style="width:40px">Start</span><input type="range" step="0.1" data-handle="start" aria-label="Start of clip {{ x.n }}">
+          <div class="range-row"><span class="u12">Start</span><input type="range" step="0.1" data-handle="start" aria-label="Start of clip {{ x.n }}">
             <button type="button" class="small ghost" data-nudge="start" data-by="-0.1" aria-label="Start earlier">−</button><button type="button" class="small ghost" data-nudge="start" data-by="0.1" aria-label="Start later">+</button></div>
-          <div class="range-row"><span style="width:40px">End</span><input type="range" step="0.1" data-handle="end" aria-label="End of clip {{ x.n }}">
+          <div class="range-row"><span class="u12">End</span><input type="range" step="0.1" data-handle="end" aria-label="End of clip {{ x.n }}">
             <button type="button" class="small ghost" data-nudge="end" data-by="-0.1" aria-label="End earlier">−</button><button type="button" class="small ghost" data-nudge="end" data-by="0.1" aria-label="End later">+</button></div>
           <div class="row"><button type="button" class="small" data-play>Play clip</button>
             <button type="button" class="small ghost" data-reset>Reset to suggested</button>
@@ -68,7 +68,7 @@
   <div class="sticky-bar">
     <div class="inner">
       <span class="grow" data-summary>{{ n_chosen }} selected · {{ chosen_duration }}</span>
-      <button type="submit" class="ghost small" name="next" value="save" style="color:#fff">Save</button>
+      <button type="submit" class="ghost small u13" name="next" value="save">Save</button>
       <button type="submit" class="primary" name="next" value="captions" data-add-captions>Add captions</button>
     </div>
   </div>
