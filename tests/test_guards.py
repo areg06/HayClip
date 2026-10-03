@@ -25,3 +25,15 @@ def test_suite_refuses_to_start_with_opt_in(tmp_path):
     r = subprocess.run([sys.executable, "-m", "pytest", "-q", "tests/test_guards.py::test_paid_opt_in_and_key_removed"],
                        env=env, capture_output=True, text=True, timeout=120)
     assert r.returncode != 0 and "refusing to run tests that could spend money" in (r.stdout + r.stderr)
+
+
+def test_forbid_flag_blocks_the_real_host_even_with_opt_in(monkeypatch):
+    """Defense in depth for subprocess-based tests (browser e2e) that must enable paid mode against the fake."""
+    import dataclasses
+    from hayclips.config import REAL_HARMAR_BASE_URL
+    from hayclips.errors import PaidOperationBlocked
+    from hayclips.transcription.harmar import HarmarClient
+    assert os.environ.get("HAYCLIPS_FORBID_REAL_HARMAR") == "1"
+    s = dataclasses.replace(load_settings(), allow_paid_harmar=True, harmar_base_url=REAL_HARMAR_BASE_URL)
+    with pytest.raises(PaidOperationBlocked, match="forbidden"):
+        HarmarClient(REAL_HARMAR_BASE_URL, "hk_live_dummy", 5, s)

@@ -56,6 +56,7 @@ def offline_and_unpaid(monkeypatch, tmp_path):
     monkeypatch.delenv("HARMAR_API_KEY", raising=False)
     monkeypatch.setenv("HAYCLIPS_HOME", str(tmp_path / "hayclips-home"))
     monkeypatch.setenv("HAYCLIPS_HARMAR_BASE_URL", "http://127.0.0.1:9")
+    monkeypatch.setenv("HAYCLIPS_FORBID_REAL_HARMAR", "1")      # inherited by every subprocess a test starts
     monkeypatch.setattr(socket.socket, "connect", _guarded_connect)
     monkeypatch.setattr(socket, "create_connection", _guarded_create_connection)
     yield

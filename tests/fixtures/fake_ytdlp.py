@@ -60,7 +60,9 @@ if "--skip-download" in argv:
         sys.exit(0)
     out = opt("-o")
     lang = opt("--sub-langs")
+    custom = os.environ.get("FAKE_YTDLP_SRT_FILE")   # lets browser tests supply longer synthetic captions
     Path(f"{out}.{lang}.srt").write_text(
+        Path(custom).read_text(encoding="utf-8") if custom else
         "1\n00:00:01,000 --> 00:00:03,000\nԲարև ձեզ։\n\n2\n00:00:03,000 --> 00:00:05,500\nԻնչպե՞ս եք։\n",
         encoding="utf-8")
     sys.exit(0)
