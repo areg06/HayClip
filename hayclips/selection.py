@@ -180,12 +180,16 @@ def pick(clips: list[Candidate], count: int) -> list[Candidate]:
 
 
 def explain(c: Candidate) -> str:
-    f = c.features
-    parts = [f"ending {f['ending_sentence']:+.1f}", f"question {f['opening_question']:+.1f}",
-             f"specific {f['opening_specific']:+.1f}"]
+    """Human-readable score parts. Tolerates candidates written by older versions (missing features)."""
+    f = c.features or {}
+    if "ending_sentence" not in f:
+        return "score parts not recorded for this candidate"
+    g = lambda k: f.get(k, 0)  # noqa: E731
+    parts = [f"ending {g('ending_sentence'):+.1f}", f"question {g('opening_question'):+.1f}",
+             f"specific {g('opening_specific'):+.1f}"]
     if f.get("weak_starter_word"):
-        parts.append(f"weak start «{f['weak_starter_word']}» {f['weak_starter']:+.1f}")
-    parts += [f"pace {f['pace']:+.2f}", f"laughs {f['laughs']} {f['laugh_bonus']:+.2f}",
-              f"fillers {f['fillers_per_min']}/min {f['filler_penalty']:+.2f}",
-              f"silence {f['silence_s']}s {f['silence_penalty']:+.2f}", f"length {f['length_bonus']:+.2f}"]
+        parts.append(f"weak start «{f['weak_starter_word']}» {g('weak_starter'):+.1f}")
+    parts += [f"pace {g('pace'):+.2f}", f"laughs {g('laughs')} {g('laugh_bonus'):+.2f}",
+              f"fillers {g('fillers_per_min')}/min {g('filler_penalty'):+.2f}",
+              f"silence {g('silence_s')}s {g('silence_penalty'):+.2f}", f"length {g('length_bonus'):+.2f}"]
     return ", ".join(parts)
