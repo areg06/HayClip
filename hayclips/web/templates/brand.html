@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Brand Kit{% endblock %}
+{% block content %}
+<div class="page-head"><div class="grow"><h1>Brand Kit</h1><p class="muted">Defaults for clips you choose from now on. You can still change each clip in the editor.</p></div></div>
+<form method="post" action="/brand" style="max-width:640px">
+  {% include "_csrf.html" %}
+  <label>Caption style</label>
+  <div class="presets" role="radiogroup" aria-label="Default caption style">
+    {% for key, label in presets.items() %}
+    <label class="preset"><input type="radio" name="preset" value="{{ key }}" {{ 'checked' if brand.look.preset == key }}>
+      <div class="sample st-{{ {'clean': 'L', 'active': 'A', 'punch': 'B', 'karaoke': 'C'}[key] }}" lang="hy">
+        {% if key == 'active' %}Սա <span class="hl">կարևոր</span>{% elif key == 'punch' %}ԿԱՐԵՎՈՐ{% elif key == 'karaoke' %}<span>Սա կարևոր է</span>{% else %}Սա կարևոր է{% endif %}</div>
+      <div class="name">{{ label }}</div></label>
+    {% endfor %}
+  </div>
+  <div class="field-row" style="margin-top:8px">
+    <div><label for="font">Caption font</label><select id="font" name="font">{% for f in fonts %}<option {{ 'selected' if f == brand.look.font }}>{{ f }}</option>{% endfor %}</select></div>
+    <div><label>Text colour</label><input class="swatch" type="color" name="color" value="{{ brand.look.color }}"></div>
+    <div><label>Highlight</label><input class="swatch" type="color" name="highlight" value="{{ brand.look.highlight }}"></div>
+  </div>
+  <label for="position">Caption position</label>
+  <select id="position" name="position" style="max-width:240px">
+    <option value="bottom" {{ 'selected' if brand.look.y > 0.7 and brand.look.y < 0.75 }}>Lower third (default)</option>
+    <option value="middle" {{ 'selected' if brand.look.y < 0.65 }}>Middle</option>
+    <option value="low" {{ 'selected' if brand.look.y >= 0.78 }}>Low</option>
+  </select>
+  <label>Hook</label>
+  <div class="row"><label class="check"><input type="checkbox" name="hook_show" {{ 'checked' if brand.hook.show }}> Show the hook at the start</label>
+    <select name="hook_position" aria-label="Hook position" style="width:auto"><option value="top" {{ 'selected' if brand.hook.y < 0.2 }}>Top</option><option value="upper" {{ 'selected' if brand.hook.y >= 0.2 }}>Upper third</option></select></div>
+  <p style="margin-top:24px"><button class="primary" type="submit">Save Brand Kit</button></p>
+</form>
+<section style="margin-top:48px;max-width:640px">
+  <h2>Logo</h2>
+  <p class="muted">Optional. Stored on this computer for later use; it is not added to videos yet.</p>
+  {% if brand.logo_file %}<img src="/brand/logo" alt="Current logo" style="max-height:64px;border-radius:8px;border:1px solid var(--line);background:#fff;padding:6px">{% endif %}
+  <form id="logo-form" data-upload-url="/brand/logo" class="row" style="margin-top:12px">
+    <input type="file" accept="image/png,image/jpeg" aria-label="Logo file" data-logo-file>
+    <button type="submit" class="small">Upload logo</button><span class="help" data-logo-status role="status"></span>
+  </form>
+</section>
+{% endblock %}

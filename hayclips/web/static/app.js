@@ -65,6 +65,21 @@
     });
   }
 
+  // ---- Brand Kit logo (raw upload, size-capped and type-checked by the server) ----
+  var logo = document.getElementById("logo-form");
+  if (logo) {
+    logo.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var f = logo.querySelector("[data-logo-file]").files[0], st = logo.querySelector("[data-logo-status]");
+      if (!f) { st.textContent = "Choose an image first."; return; }
+      fetch(logo.getAttribute("data-upload-url"), { method: "POST", body: f, credentials: "same-origin",
+        headers: { "X-CSRF-Token": csrf, "Content-Type": "application/octet-stream" } })
+        .then(function (r) { return r.json().then(function (d) { return [r.ok, d]; }); })
+        .then(function (x) { if (x[0]) window.location.reload(); else st.textContent = x[1].error || "Upload failed"; })
+        .catch(function () { st.textContent = "Upload failed"; });
+    });
+  }
+
   // ---- Choose clips: live selection summary and pre-transcription trim (all in the browser; free) ----
   function fmt(sec) {
     sec = Math.max(0, Math.round(sec));

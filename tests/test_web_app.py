@@ -114,7 +114,8 @@ def test_create_project_and_enqueue_first_steps(env):
     assert got["import_captions"]["pool"] == "io"
     assert got["generate_candidates"]["payload"]["count"] == 4
     page = client.get(f"/p/{pid}")
-    assert page.status_code == 200 and "Paid transcription is disabled in this environment" in page.text
+    assert page.status_code == 200 and "Finding moments" in page.text      # jobs are queued
+    assert "<strong>off</strong>" in client.get("/settings").text          # paid transcription off here
 
 
 @pytest.mark.parametrize("bad", ["--exec=touch /tmp/pwn", "-o/tmp/x", "file:///etc/passwd",

@@ -98,7 +98,8 @@ def create_app(*, dsn: str | None = None, projects_root: Path | None = None, rep
         return HTMLResponse(env.get_template(name).render(**ctx), status_code=status)
 
     def back(url: str, msg: str | None = None) -> RedirectResponse:
-        return RedirectResponse(url + (f"?msg={quote(msg)}" if msg else ""), status_code=303)
+        sep = "&" if "?" in url else "?"
+        return RedirectResponse(url + (f"{sep}msg={quote(msg)}" if msg else ""), status_code=303)
 
     def project_row(c, pid: str) -> dict:
         if not PROJECT_ID.match(pid):
@@ -351,9 +352,33 @@ def create_app(*, dsn: str | None = None, projects_root: Path | None = None, rep
                 bool(sel) and n_reviewed >= len(sel)]
         current = next((k for k, d in enumerate(done) if not d), None)
         active = [j for j in jobs if j["state"] in ("QUEUED", "RUNNING", "RETRY_WAIT")]
+        from .product import project_stage
+        with conn() as c:
+            reviewed = {x["clip_id"] for x in c.execute(
+                "SELECT DISTINCT clip_id FROM review_decisions WHERE project_id = %s", (pid,)).fetchall()}
+            scheduled = {x["clip_id"] for x in c.execute(
+                "SELECT DISTINCT clip_id FROM calendar_items WHERE project_id = %s", (pid,)).fetchall()}
+        stage = project_stage(repo, jobs, reviewed, scheduled)
+        for x in clips:
+            f = stage["facts"].get(x["clip"].id) or {}
+            x["transcribed"] = f.get("transcribed", False)
+            x["scheduled"] = x["clip"].id in scheduled
+            x["reviewed"] = x["clip"].id in reviewed
         return page(request, "project.html", row=row, project=project, clips=clips, jobs=jobs, msg=msg,
                     n_candidates=len(cands), captions=captions, n_transcribed=n_transcribed,
-                    steps_done=done, current_step=current, active_jobs=active)
+                    steps_done=done, current_step=current, active_jobs=active, stage=stage)
+
+    @app.post("/p/{pid}/find")
+    def find_clips(pid: str):
+        """Find clips: free captions (YouTube) or a free local discovery transcript (upload), then candidates."""
+        with conn() as c:
+            row = project_row(c, pid)
+            kind = repo_for(row).load().source.get("kind")
+            if kind == "upload":
+                enqueue(c, row, "discover_transcript", {"then": ["generate_candidates"]}, f"{pid}:discover")
+            else:
+                enqueue(c, row, "import_captions", {"then": ["generate_candidates"]}, f"{pid}:import_captions")
+        return back(f"/p/{pid}", "finding moments")
 
     @app.get("/p/{pid}/jobs", response_class=HTMLResponse)
     def jobs_partial(request: Request, pid: str):
@@ -683,7 +708,8 @@ def create_app(*, dsn: str | None = None, projects_root: Path | None = None, rep
         clip_of(repo.load(), cid)
         changes = {k: str(form.get(k))[:500] for k in ("title", "hook", "pick_note") if form.get(k) is not None}
         trim = str(form.get("trim", "")).strip()
-        dest = f"/p/{pid}/review" if form.get("from") == "review" else f"/p/{pid}"
+        dest = {"review": f"/p/{pid}/review", "editor": f"/p/{pid}/clips/{cid}/editor?mode=trim"}.get(
+            str(form.get("from")), f"/p/{pid}")
         if trim:
             if trim == "auto":
                 changes["trim"] = None
@@ -919,4 +945,10 @@ def create_app(*, dsn: str | None = None, projects_root: Path | None = None, rep
                             filename=_slug(filename) + Path(name).suffix if filename else None,
                             content_disposition_type="attachment" if download else "inline")
 
+    from types import SimpleNamespace
+    from . import editor
+    editor.register(app, SimpleNamespace(conn=conn, page=page, back=back, project_row=project_row, repo_for=repo_for,
+                                         clip_of=clip_of, enqueue=enqueue, transcribed=transcribed,
+                                         edit_revision=edit_revision, queue=queue, NotFound=NotFound,
+                                         ProjectRepo=ProjectRepo, projects_root=projects_root))
     return app

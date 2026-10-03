@@ -1,90 +1,84 @@
 {% extends "base.html" %}
 {% block title %}{{ project.name }}{% endblock %}
 {% block content %}
-<h1>{{ project.name }}</h1>
-<p class="muted">Source: {{ project.source.url or 'unknown' }}{% if project.source.duration %} · {{ project.source.duration | hms }}{% endif %}{% if project.source.title %} · <span lang="hy">{{ project.source.title }}</span>{% endif %}</p>
-
-{% set step_names = ['Captions', 'Candidates', 'Select', 'Download windows', 'Transcribe (paid)', 'Render', 'Review'] %}
-{% set next_help = ['Fetch the free captions (step 1).', 'Generate candidates from the captions (step 2).',
-  'Open the candidates and select the 2–3 windows that make sense on their own (step 3).',
-  'Download the selected windows (step 4).', 'Transcribe the selected clips (step 5, paid).',
-  'Render the transcribed clips (step 6).', 'Review each rendered clip and save a decision (step 7).'] %}
-<ol class="steps" aria-label="workflow">
-  {% for name in step_names %}
-  <li class="{{ 'done' if steps_done[loop.index0] }}{{ ' current' if current_step == loop.index0 }}"{% if current_step == loop.index0 %} aria-current="step"{% endif %}>{{ loop.index }} {{ name }}{% if steps_done[loop.index0] %} ✓{% endif %}</li>
-  {% endfor %}
-</ol>
-<p class="next">{% if current_step is not none %}<strong>Next:</strong> {{ next_help[current_step] }}{% if current_step == 4 and not paid_enabled %} Paid transcription is disabled here, so new clips stop at this step.{% endif %}{% else %}<strong>All steps done.</strong> See the <a href="/p/{{ row.id }}/summary">summary</a>.{% endif %}
-{% if active_jobs %}<span class="tag warn" id="active-jobs">{{ active_jobs | length }} job(s) in progress — see Jobs below</span>{% endif %}</p>
-
-<section class="card">
-  <h2>1–2 · Free captions and candidates</h2>
-  <p class="muted">Captions: {{ captions | join(', ') if captions else 'not fetched yet' }} · candidates: {{ n_candidates }}</p>
-  <div class="row">
-    <form method="post" action="/p/{{ row.id }}/jobs/import_captions">{% include "_csrf.html" %}<button type="submit">Fetch free captions</button></form>
+{% set chosen = clips | selectattr('clip.selected') | list %}
+<div class="page-head">
+  <div class="grow">
+    <h1>{{ project.name }}</h1>
+    <p class="muted">{% if project.source.kind == 'upload' %}Uploaded video{% if project.source.original_name %} · {{ project.source.original_name }}{% endif %}
+      {% else %}<a href="{{ project.source.url }}" target="_blank" rel="noopener noreferrer">YouTube</a>{% if project.source.title %} · <span lang="hy">{{ project.source.title }}</span>{% endif %}{% endif %}
+      {% if project.source.duration %} · {{ project.source.duration | hms }}{% endif %}</p>
   </div>
-  <form method="post" action="/p/{{ row.id }}/jobs/generate_candidates">
-    {% include "_csrf.html" %}
-    <div class="row">
-      <label>min s <input name="min_seconds" type="number" step="1" value="25"></label>
-      <label>max s <input name="max_seconds" type="number" step="1" value="60"></label>
-      <label>count <input name="count" type="number" step="1" value="6"></label>
-      <label>skip start s <input name="skip_start" type="number" step="1" value="0"></label>
-      <label>skip end s <input name="skip_end" type="number" step="1" value="0"></label>
-    </div>
-    {% if captions %}
-    <p><button type="submit">Generate candidates</button> <a href="/p/{{ row.id }}/candidates">See candidates →</a></p>
-    {% else %}
-    <p><button type="submit" disabled>Generate candidates</button> <span class="muted">Fetch the free captions first; candidates are built from them.</span></p>
-    {% endif %}
-  </form>
-</section>
+  <span class="pill {{ stage.stage_tone }}" data-stage>{{ stage.stage }}</span>
+</div>
+{% if active_jobs %}<span data-refresh-while-busy hidden></span>{% endif %}
 
-<section class="card">
-  <h2>3 · Selected clips</h2>
-  {% if clips %}
-  <table><thead><tr><th>#</th><th>Clip</th><th>Window</th><th>Transcript</th><th>Renders</th><th></th></tr></thead><tbody>
-  {% for x in clips %}{% set c = x.clip %}
-  <tr class="{{ '' if c.selected else 'muted' }}">
-    <td>{{ c.order }}</td>
-    <td lang="hy">{% if c.selected %}<span class="tag ok">selected</span>{% else %}<span class="tag">unselected</span>{% endif %} {{ c.title or '(untitled)' }}<div class="meta">{{ c.id }} · {{ c.start | hms }}–{{ c.end | hms }} ({{ (c.end - c.start) | round | int }} s){% if c.hook %} · hook «{{ c.hook }}»{% endif %}</div></td>
-    <td>{{ 'downloaded' if x.window else '—' }}</td>
-    <td>{% if x.attempt %}{{ {'COMPLETED': 'transcribed'}.get(x.attempt.state, x.attempt.state) }}{% if (x.attempt.state | safety) != x.attempt.state %}<div class="meta">{{ x.attempt.state | safety }}</div>{% endif %}{% else %}—{% endif %}</td>
-    <td>{{ x.rendered | join(', ') or '—' }}</td>
-    <td class="row">
-      <form class="inline" method="post" action="/p/{{ row.id }}/clips/{{ c.id }}/move">{% include "_csrf.html" %}<input type="hidden" name="dir" value="up"><button type="submit" aria-label="move up">↑</button></form>
-      <form class="inline" method="post" action="/p/{{ row.id }}/clips/{{ c.id }}/move">{% include "_csrf.html" %}<input type="hidden" name="dir" value="down"><button type="submit" aria-label="move down">↓</button></form>
-      <form class="inline" method="post" action="/p/{{ row.id }}/clips/{{ c.id }}/selected">{% include "_csrf.html" %}<input type="hidden" name="value" value="{{ 'no' if c.selected else 'yes' }}"><button type="submit">{{ 'Unselect' if c.selected else 'Select again' }}</button></form>
-    </td>
-  </tr>
-  {% endfor %}
-  </tbody></table>
-  {% else %}<p class="muted">No clips selected. Pick 2–3 on the <a href="/p/{{ row.id }}/candidates">candidates</a> page.</p>{% endif %}
-</section>
-
-<section class="card">
-  <h2>4 · Download the selected windows</h2>
-  <p class="muted">Downloads only the selected windows (plus 5 s padding), never the full episode, and extracts the audio sent for transcription.</p>
-  <form method="post" action="/p/{{ row.id }}/jobs/fetch_windows">{% include "_csrf.html" %}<button type="submit">Download windows</button></form>
-</section>
-
-<section class="card">
-  <h2>5 · Transcription (paid)</h2>
-  {% if not paid_enabled %}<div class="banner">Paid transcription is disabled in this environment.</div>{% endif %}
-  <p><a href="/p/{{ row.id }}/transcribe">Review cost and confirm →</a></p>
-</section>
-
-<section class="card">
-  <h2>6 · Render</h2>
-  {% if n_transcribed %}
-  {% include "_render_form.html" %}
+<section class="surface" style="margin-bottom:40px" data-next-action>
+  {% if stage.stage == 'Finding clips' %}
+    <h2>Finding moments…</h2><p class="muted">This page updates by itself. It usually takes under a minute.</p>
+  {% elif stage.stage == 'Adding captions' %}
+    <h2>Adding captions…</h2><p class="muted">Downloading, transcribing and rendering the {{ chosen | length }} chosen clip{{ '' if chosen | length == 1 else 's' }}.</p>
+  {% elif not n_candidates %}
+    <h2>Find clips</h2>
+    <p class="muted">{% if project.source.kind == 'upload' %}HayClips makes a quick local transcript of your video to find moments. Nothing is sent to a paid service.
+      {% else %}HayClips reads the free YouTube captions to find moments. Nothing is paid for.{% endif %}</p>
+    <form method="post" action="/p/{{ row.id }}/find">{% include "_csrf.html" %}<button class="primary big" type="submit">Find clips</button></form>
+  {% elif not chosen %}
+    <h2>{{ n_candidates }} moments found</h2><p class="muted">Preview them and choose the ones worth finishing.</p>
+    <a class="btn primary big" href="/p/{{ row.id }}/candidates">Choose clips</a>
+  {% elif not n_transcribed %}
+    <h2>{{ chosen | length }} clip{{ '' if chosen | length == 1 else 's' }} chosen</h2>
+    <p class="muted">Add captions to finish them.{% if not paid_enabled %} Paid transcription is disabled in this environment.{% endif %}</p>
+    <div class="row"><a class="btn primary big" href="/p/{{ row.id }}/captions">Add captions</a><a class="btn ghost" href="/p/{{ row.id }}/candidates">Change selection</a></div>
   {% else %}
-  <p class="muted">Rendering needs a transcript: captions are burned in from it. Transcribe the selected clips first (step 5).</p>
+    <h2>{{ stage.n_ready }} of {{ chosen | length }} clips ready to edit</h2>
+    <p class="muted">Open a clip to adjust captions, trim or framing, then export.</p>
+    <div class="row"><a class="btn ghost" href="/p/{{ row.id }}/candidates">Choose more clips</a><a class="btn ghost" href="/p/{{ row.id }}/review">Review all</a></div>
   {% endif %}
 </section>
 
-<section class="card">
-  <h2>Jobs</h2>
-  <div data-poll="/p/{{ row.id }}/jobs">{% include "_jobs.html" %}</div>
+{% if chosen %}
+<section>
+  <h2>Clips</h2>
+  <div class="grid-clips">
+  {% for x in chosen %}{% set c = x.clip %}
+    <div class="clipcard" data-clip="{{ c.id }}">
+      <a href="{{ '/p/' ~ row.id ~ '/clips/' ~ c.id ~ '/editor' if x.transcribed else '/p/' ~ row.id ~ '/candidates' }}" style="text-decoration:none">
+      <div class="vframe">{% if x.rendered %}<video preload="metadata" muted playsinline src="/p/{{ row.id }}/media/{{ c.id }}/{{ x.rendered[0] }}.mp4#t=1"></video>
+        {% else %}<div class="empty-thumb">{{ 'Captions not added yet' if not x.transcribed else 'Not rendered yet' }}</div>{% endif %}</div></a>
+      <div class="title" lang="hy">{{ c.title or 'Clip ' ~ loop.index }}</div>
+      <div class="row between"><span class="muted">{{ (c.end - c.start) | round | int }} s</span>
+        {% if x.scheduled %}<span class="pill ok">Scheduled</span>{% elif x.rendered and x.reviewed %}<span class="pill ok">Ready</span>
+        {% elif x.rendered %}<span class="pill warn">Editing</span>{% elif x.transcribed %}<span class="pill warn">Captioned</span>{% else %}<span class="pill">Chosen</span>{% endif %}</div>
+      {% if x.transcribed %}<div class="row" style="margin-top:6px"><a class="btn small" href="/p/{{ row.id }}/clips/{{ c.id }}/editor">Edit</a>
+        {% if x.rendered %}<a class="btn small ghost" href="/p/{{ row.id }}/clips/{{ c.id }}/export">Export</a>{% endif %}</div>{% endif %}
+    </div>
+  {% endfor %}
+  </div>
 </section>
+{% endif %}
+
+<details style="margin-top:24px">
+  <summary>Activity and advanced controls</summary>
+  <div style="margin-top:16px" data-poll="/p/{{ row.id }}/jobs">{% include "_jobs.html" %}</div>
+  <div class="stack" style="margin-top:24px">
+    <form method="post" action="/p/{{ row.id }}/jobs/import_captions" class="inline">{% include "_csrf.html" %}<button type="submit" class="small">Fetch free captions</button></form>
+    <form method="post" action="/p/{{ row.id }}/jobs/generate_candidates">
+      {% include "_csrf.html" %}
+      <div class="field-row">
+        <div><label>min s</label><input name="min_seconds" type="number" step="1" value="25"></div>
+        <div><label>max s</label><input name="max_seconds" type="number" step="1" value="60"></div>
+        <div><label>count</label><input name="count" type="number" step="1" value="6"></div>
+        <div><label>skip start s</label><input name="skip_start" type="number" step="1" value="0"></div>
+        <div><label>skip end s</label><input name="skip_end" type="number" step="1" value="0"></div>
+      </div>
+      {% if captions %}<p><button type="submit" class="small">Find moments again</button></p>
+      {% else %}<p><button type="submit" class="small" disabled>Find moments again</button> <span class="help">Fetch the free captions first; candidates are built from them.</span></p>{% endif %}
+    </form>
+    <form method="post" action="/p/{{ row.id }}/jobs/fetch_windows" class="inline">{% include "_csrf.html" %}<button type="submit" class="small">Download windows</button></form>
+    {% if n_transcribed %}{% include "_render_form.html" %}
+    {% else %}<p class="help">Rendering needs a transcript: captions are burned in from it.</p>{% endif %}
+    <p class="help"><a href="/p/{{ row.id }}/transcribe">Transcription details</a> · <a href="/p/{{ row.id }}/consent">Creator permission</a></p>
+  </div>
+</details>
 {% endblock %}
