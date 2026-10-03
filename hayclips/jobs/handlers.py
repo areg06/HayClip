@@ -222,7 +222,8 @@ def render(job: dict, ctx: Context) -> dict:
         ctx.progress(k / max(len(clips), 1), f"rendering clip {k + 1}/{len(clips)}")
         try:
             results.append(render_clip(ctx.repo, clip, styles=p["styles"], caption_bottom=p["caption_bottom"],
-                                       hook_enabled=p["hook_enabled"], settings=ctx.settings))
+                                       hook_enabled=p["hook_enabled"], settings=ctx.settings,
+                                       use_look=bool(p.get("use_look"))))
         except PipelineError as exc:
             results.append(ClipResult(clip.id, clip.order, "failed", str(exc)))
     write_review(ctx.repo, project, results)

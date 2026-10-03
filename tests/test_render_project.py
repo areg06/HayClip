@@ -140,3 +140,25 @@ def test_unknown_style_is_refused(tmp_path):
     repo, _ = synth.make_project(tmp_path / "p", seconds=4)
     with pytest.raises(Exception, match="unknown caption style"):
         render(repo, styles=["Z"])
+
+
+def test_render_uses_clip_look_hook_and_transcript_edits(tmp_path):
+    """Phase 1d: the editor's look, hook position and corrected text reach the final render."""
+    from hayclips import jsonio
+    from hayclips.captions.edits import save_edit
+    from hayclips.look import normalise_hook, normalise_look
+    from hayclips.render import render_clip
+    from hayclips.transcription.store import completed_transcript
+    repo, clip = synth.make_project(tmp_path / "p", seconds=6, hook="Փորձնական հուք")
+    repo.update_clip(clip.id, look=normalise_look({"preset": "clean", "x": 0.5, "y": 0.6}),
+                     hook_look=normalise_hook({"y": 0.25, "duration": 2}))
+    raw = completed_transcript(repo, clip.id).raw
+    save_edit(repo.clip_dir(clip.id), raw, 0, "Ուղղված տեքստ այստեղ", "op")
+    res = render_clip(repo, repo.load().clip(clip.id), styles=["A"], caption_bottom=930, hook_enabled=True,
+                      settings=load_settings(), use_look=True)
+    assert res.status == "rendered" and list(res.outputs) == ["L"], res.message
+    doc = (repo.render_dir(clip.id) / "L.ass").read_text(encoding="utf-8")
+    assert "\\an2\\pos(360,768)" in doc and "\\an8\\pos(360,320)" in doc and "Ուղղված" in doc
+    info = jsonio.read_json(repo.render_dir(clip.id) / "render.json")
+    assert info["transcript_edited"] is True and info["look"]["preset"] == "clean"
+    assert "Ուղղված" not in str(raw)                                         # the paid result is untouched

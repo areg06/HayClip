@@ -67,7 +67,14 @@ def _cut(clip: Clip, window, raw: dict, full: float) -> tuple[float, float, str,
 
 
 def render_clip(repo: ProjectRepo, clip: Clip, *, styles: list[str], caption_bottom: int, hook_enabled: bool,
-                settings: Settings) -> ClipResult:
+                settings: Settings, use_look: bool = False) -> ClipResult:
+    """use_look: render the clip's own look (editor / Brand Kit) instead of the given styles."""
+    from .captions.edits import apply_edits, load_edits
+    from .look import PRESETS, normalise_hook, normalise_look
+    look = normalise_look(clip.look) if (use_look and clip.look) else None
+    hook_look = normalise_hook(clip.hook_look) if (use_look and clip.hook_look) else None
+    if look:
+        styles = [PRESETS[look["preset"]]]
     res = ClipResult(clip.id, clip.order, "failed")
     window = repo.load_window(clip.id)
     if window is None:
@@ -84,7 +91,8 @@ def render_clip(repo: ProjectRepo, clip: Clip, *, styles: list[str], caption_bot
     src = repo.verify_media(clip.id, src_media)
     alignment = verify_alignment(tpath, tr.media, src, src_media, settings=settings)
     full = probe(src, settings).duration
-    raw = tr.raw
+    edits = load_edits(repo.clip_dir(clip.id))
+    raw = apply_edits(tr.raw, edits)
     cs, ce, mode, note = _cut(clip, window, raw, full)
     length = round(ce - cs, 3)
     words, segs, word_source = _clip_words(raw, cs, ce)
@@ -110,7 +118,7 @@ def render_clip(repo: ProjectRepo, clip: Clip, *, styles: list[str], caption_bot
         checks.append("no transcript words inside the cut: rendered without captions")
     for style in styles:
         doc, ev = A.build_ass(style, words, length, caption_bottom=caption_bottom, hook=hook,
-                              family=settings.font_family)
+                              family=settings.font_family, look=look, hook_look=hook_look)
         (rdir / f"{style}.ass").write_text(doc, encoding="utf-8")
         out = rdir / f"{style}.mp4"
         F.render_clip(src=src, out=out, ass_name=f"{style}.ass", start=cs, length=length, frame_filter=vf,
@@ -131,6 +139,7 @@ def render_clip(repo: ProjectRepo, clip: Clip, *, styles: list[str], caption_bot
                 "source_start": round(window.source_start + cs, 3), "source_end": round(window.source_start + ce, 3)},
         "word_source": word_source, "hook": hook or None, "audio": audio.note, "framing": framing,
         "caption_bottom": caption_bottom, "styles": styles, "outputs": res.outputs, "checks": checks,
+        "look": look, "hook_look": hook_look, "transcript_edited": bool(edits.get("segments")),
         "first_word_at": round(words[0][0], 3) if words else None,
         "first_3s_text": " ".join(w for a, _, w, _ in words if a < 3.0)})
     res.status, res.checks = "rendered", checks
