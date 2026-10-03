@@ -127,7 +127,8 @@ class ProjectRepo:
 
     def update_source(self, **fields) -> Project:
         """Record source metadata found by inspection (kind, video_id, url, title, duration)."""
-        allowed = {"kind", "video_id", "url", "title", "duration", "captions"}
+        allowed = {"kind", "video_id", "url", "title", "duration", "captions", "captions_kind", "file", "sha256",
+                   "size", "original_name"}
         if set(fields) - allowed:
             raise ValidationError(f"unknown source fields: {sorted(set(fields) - allowed)}")
         project = self.load()

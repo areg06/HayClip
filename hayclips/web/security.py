@@ -65,6 +65,9 @@ def _same_origin(request: Request, host: str) -> bool:
 
 
 MAX_FORM_BYTES = 1_000_000
+# Raw-body uploads stream straight to disk in the endpoint (never buffered here); the CSRF token comes
+# in the X-CSRF-Token header instead of the form.
+RAW_UPLOAD_PATHS = {"/new/upload", "/brand/logo"}
 
 
 class SecurityMiddleware:
@@ -89,6 +92,10 @@ class SecurityMiddleware:
                 return await self._plain(scope, receive, send, "method not allowed", 405)
             if not _same_origin(request, host):
                 return await self._plain(scope, receive, send, "cross-origin request refused", 403)
+            if scope["path"] in RAW_UPLOAD_PATHS:
+                if not self.csrf.valid(request.cookies.get(SESSION_COOKIE), request.headers.get("x-csrf-token")):
+                    return await self._plain(scope, receive, send, "missing or invalid CSRF token; reload the page", 403)
+                return await self.app(scope, receive, self._send_with_headers(scope, send, None))
             body, more = b"", True
             while more:
                 msg = await receive()
@@ -115,6 +122,10 @@ class SecurityMiddleware:
         new = None if _valid_sid(request.cookies.get(SESSION_COOKIE)) else secrets.token_urlsafe(32)
         scope["hc_new_session"] = new
 
+        await self.app(scope, receive, self._send_with_headers(scope, send, new))
+
+    @staticmethod
+    def _send_with_headers(scope, send, new):
         async def send_with_headers(message):
             if message["type"] == "http.response.start":
                 headers = MutableHeaders(scope=message)
@@ -122,8 +133,7 @@ class SecurityMiddleware:
                 if new:
                     headers.append("set-cookie", f"{SESSION_COOKIE}={new}; HttpOnly; SameSite=Strict; Path=/")
             await send(message)
-
-        await self.app(scope, receive, send_with_headers)
+        return send_with_headers
 
     async def _plain(self, scope, receive, send, text, status):
         response = PlainTextResponse(text, status_code=status)

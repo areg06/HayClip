@@ -95,9 +95,67 @@ def generate_candidates(job: dict, ctx: Context) -> dict:
         duration = max(l.end for l in lines)
     ctx.progress(0.3, "scoring sentence windows")
     ranked = candidates(sentence_units(lines), duration, p["min_seconds"], p["max_seconds"], p["skip_start"], p["skip_end"])
+    if p.get("more"):
+        # "Find more": keep every existing candidate (ids stay stable) and add the next best windows
+        # that do not overlap what is already there.
+        existing = ctx.repo.load_candidates()
+        fresh = pick(existing + [c for c in ranked if c.id not in {e.id for e in existing}], len(existing) + p["count"])
+        added = [c for c in fresh if c.id not in {e.id for e in existing}]
+        ctx.repo.save_candidates(existing + added, {**p, "duration": duration})
+        return {"count": len(added), "candidate_ids": [c.id for c in added], "more": True}
     chosen = pick(ranked, p["count"])
     ctx.repo.save_candidates(chosen, {**p, "duration": duration})
     return {"count": len(chosen), "candidate_ids": [c.id for c in chosen]}
+
+
+def discover_transcript(job: dict, ctx: Context) -> dict:
+    """Uploaded source: cheap LOCAL transcript to find moments. Never paid, never the final captions."""
+    contracts.validate("discover_transcript", job.get("payload") or {})
+    import tempfile
+    from ..discovery import discover
+    from ..sources.upload import UploadedFileSource
+    project = ctx.repo.load()
+    if project.source.get("kind") != "upload":
+        raise PipelineError("discovery transcripts are for uploaded videos; YouTube projects use free captions")
+    src = UploadedFileSource(ctx.repo.root, project.source, ctx.settings)
+    duration = float(project.source.get("duration") or 0)
+    out = ctx.repo.root / "source" / "discovery.srt"
+    with tempfile.TemporaryDirectory(dir=ctx.repo.root) as tmp:
+        ctx.progress(0.05, "preparing audio")
+        audio = src.audio_for_discovery(Path(tmp) / "audio.wav")
+        _check_cancel(ctx)
+        ctx.progress(0.1, "listening for moments (local, approximate)")
+        info = discover(audio, out, duration, progress=ctx.progress)
+    ctx.repo.update_source(captions="source/discovery.srt", captions_kind="discovery")
+    return {"engine": info["engine"], "cues": info["cues"], "note": "approximate; used only to find moments"}
+
+
+PREVIEW_PAD = 10.0
+
+
+def preview_candidate(job: dict, ctx: Context) -> dict:
+    """Cheap low-resolution preview of one candidate window (+ margin for trimming). Never paid."""
+    p = contracts.validate("preview_candidate", job.get("payload") or {})
+    from .. import jsonio
+    from ..fetch import default_source_factory
+    project = ctx.repo.load()
+    cand = next((c for c in ctx.repo.load_candidates() if c.id == p["candidate_id"]), None)
+    if cand is None:
+        raise PipelineError("that candidate is no longer listed")
+    clip = next((c for c in project.clips if c.candidate_id == cand.id), None)
+    start, end = (clip.start, clip.end) if clip else (cand.start, cand.end)
+    duration = float(project.source.get("duration") or 0)
+    a = max(0.0, start - PREVIEW_PAD)
+    b = min(end + PREVIEW_PAD, duration) if duration else end + PREVIEW_PAD
+    pdir = ctx.repo.root / "previews" / cand.id
+    pdir.mkdir(parents=True, exist_ok=True)
+    source = default_source_factory(project.source, ctx.settings, ctx.repo.root)
+    ctx.progress(0.1, "making a quick preview")
+    tmp = pdir / ".preview.mp4"
+    files = source.fetch_preview(a, b, tmp)
+    files.wide.replace(pdir / "preview.mp4")
+    jsonio.write_json(pdir / "preview.json", {"start": files.start, "end": files.end})
+    return {"candidate_id": cand.id, "start": files.start, "end": files.end}
 
 
 def fetch_windows(job: dict, ctx: Context) -> dict:
@@ -190,6 +248,8 @@ def render(job: dict, ctx: Context) -> dict:
 
 HANDLERS: dict[str, Callable[[dict, Context], dict]] = {
     "import_captions": import_captions,
+    "discover_transcript": discover_transcript,
+    "preview_candidate": preview_candidate,
     "generate_candidates": generate_candidates,
     "fetch_windows": fetch_windows,
     "transcribe": transcribe,

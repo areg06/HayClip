@@ -40,8 +40,13 @@ class FetchResult:
     error: PipelineError | None = None
 
 
-def default_source_factory(project_source: dict, settings: Settings) -> SourceProvider:
+def default_source_factory(project_source: dict, settings: Settings, project_root: Path | None = None) -> SourceProvider:
     from .sources.youtube import YouTubeSource
+    if project_source.get("kind") == "upload":
+        from .sources.upload import UploadedFileSource
+        if project_root is None:
+            raise PipelineError("an uploaded source needs its project folder")
+        return UploadedFileSource(project_root, project_source, settings)
     if project_source.get("kind") not in (None, "", "youtube"):
         raise PipelineError(f"unsupported source kind {project_source.get('kind')!r}")
     ref = project_source.get("video_id") or project_source.get("url", "")
@@ -146,10 +151,12 @@ def fetch_selected_clips(repo: ProjectRepo, clip_ids: list[str] | None = None, *
                                 hint="only selected clips can be fetched; select them first")
         wanted = set(clip_ids)
         clips = [c for c in clips if c.id in wanted]
-    source = (source_factory or default_source_factory)(project.source, settings)
+    source = source_factory(project.source, settings) if source_factory else \
+        default_source_factory(project.source, settings, repo.root)
     captions = None
     writer = _caption_writer()
-    srts = sorted((repo.root / "source").glob("*.srt"))
+    rel = project.source.get("captions")
+    srts = [repo.root / rel] if rel and (repo.root / rel).is_file() else sorted((repo.root / "source").glob("*.srt"))
     if writer and srts:
         captions = writer[0](srts[0])
     results = []

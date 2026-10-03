@@ -34,3 +34,7 @@ class SourceProvider(Protocol):
     def fetch_window(self, start: float, end: float, dest: Path) -> WindowFiles:
         """Download only [start, end] of the source to dest (landscape)."""
         ...
+
+    def fetch_preview(self, start: float, end: float, dest: Path) -> WindowFiles:
+        """A cheap low-resolution copy of [start, end] for in-app previews (never used for paid work)."""
+        ...

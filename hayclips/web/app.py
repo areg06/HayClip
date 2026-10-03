@@ -245,6 +245,59 @@ def create_app(*, dsn: str | None = None, projects_root: Path | None = None, rep
                 enqueue(c, row, "import_captions", {"then": ["generate_candidates"]}, f"{pid}:import_captions")
         return back(f"/p/{row['id']}")
 
+    @app.post("/new/upload")
+    async def upload_video(request: Request):
+        """Raw-body upload (the browser sends the file itself). Streamed to disk with a size cap, then
+        validated with ffprobe before it becomes a project. Starts the free local discovery path."""
+        from fastapi.responses import JSONResponse
+        from urllib.parse import unquote
+        from ..sources.upload import ALLOWED_EXT, validate_upload
+        from ..hashing import sha256_file
+        settings = load_settings()
+        name = unquote(request.headers.get("x-project-name", "")).strip()[:120]
+        original = Path(unquote(request.headers.get("x-filename", ""))).name[:200]
+        ext = Path(original).suffix.lower()
+        if not name:
+            return JSONResponse({"error": "give the video a name"}, status_code=400)
+        if ext not in ALLOWED_EXT:
+            return JSONResponse({"error": "upload an MP4, MOV or M4V file"}, status_code=400)
+        declared = request.headers.get("content-length")
+        if declared and declared.isdigit() and int(declared) > settings.limits.max_source_bytes:
+            return JSONResponse({"error": "the file is larger than the upload limit"}, status_code=413)
+        staging = projects_root / ".uploads"
+        staging.mkdir(parents=True, exist_ok=True)
+        part = staging / f"{secrets.token_hex(8)}{ext}.part"
+        size = 0
+        try:
+            with part.open("wb") as f:
+                async for chunk in request.stream():
+                    size += len(chunk)
+                    if size > settings.limits.max_source_bytes:
+                        raise ValidationError("the file is larger than the upload limit")
+                    f.write(chunk)
+            facts = validate_upload(part, ext, settings)
+        except PipelineError as exc:
+            part.unlink(missing_ok=True)
+            return JSONResponse({"error": exc.message}, status_code=400)
+        except BaseException:
+            part.unlink(missing_ok=True)
+            raise
+        pid = new_id("prj")
+        slug = _slug(name)
+        target = projects_root / (f"{slug}-{pid[4:9]}" if slug else pid)
+        (target / "source").mkdir(parents=True)
+        dest = target / "source" / f"original{ext}"
+        part.replace(dest)
+        repo = ProjectRepo(target)
+        repo.init(name, {"kind": "upload", "file": f"source/original{ext}", "sha256": sha256_file(dest),
+                         "size": facts["size"], "duration": facts["duration"], "original_name": original})
+        with conn() as c:
+            row = queue.register_project(c, project_id=pid, name=name, dir=str(target), source_url=None)
+            queue.log_event(c, pid, "project_created", {"source": "upload", "bytes": facts["size"]}, actor="operator")
+            if facts["has_audio"]:
+                enqueue(c, row, "discover_transcript", {"then": ["generate_candidates"]}, f"{pid}:discover")
+        return JSONResponse({"redirect": f"/p/{pid}"})
+
     @app.post("/projects/register")
     async def register_existing(request: Request):
         form = await request.form()

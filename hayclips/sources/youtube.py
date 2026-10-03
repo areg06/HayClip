@@ -31,6 +31,7 @@ YOUTUBE_HOSTS = {"youtube.com", "www.youtube.com", "m.youtube.com"}
 SHORT_HOST = "youtu.be"
 CAPTION_LANG = re.compile(r"[a-z]{2,3}(-[A-Za-z0-9]{1,8})*")
 VIDEO_FORMAT = "bv*[height<=1080]+ba/b[height<=1080]"
+PREVIEW_FORMAT = "bv*[height<=360]+ba/b[height<=360]/wv*+ba/w"   # cheap in-app candidate previews
 WINDOW_MAX_FILESIZE = "500M"
 # Never download more than this in one window: a full-episode download is not a window.
 MAX_DOWNLOAD_WINDOW_SECONDS = 600
@@ -179,7 +180,13 @@ class YouTubeSource:
                               hint=f"YouTube has no '{lang}' captions; provide an SRT file instead")
         return path
 
-    def fetch_window(self, start: float, end: float, dest: Path) -> WindowFiles:
+    def fetch_preview(self, start: float, end: float, dest: Path) -> WindowFiles:
+        """Low-resolution preview of a candidate window: free, disposable, never used for paid work."""
+        return self.fetch_window(start, end, dest, video_format=PREVIEW_FORMAT)
+
+    def fetch_window(self, start: float, end: float, dest: Path, video_format: str = VIDEO_FORMAT) -> WindowFiles:
+        if video_format not in (VIDEO_FORMAT, PREVIEW_FORMAT):
+            raise ValidationError("unknown download format")
         try:
             start, end = float(start), float(end)
         except (TypeError, ValueError):
@@ -193,7 +200,7 @@ class YouTubeSource:
         dest.parent.mkdir(parents=True, exist_ok=True)
         tmp = dest.parent / f".dl-{dest.name}-{secrets.token_hex(4)}"
         out = tmp / "window.mp4"
-        extra = ["-f", VIDEO_FORMAT, "--download-sections", f"*{start:.2f}-{end:.2f}", "--force-keyframes-at-cuts",
+        extra = ["-f", video_format, "--download-sections", f"*{start:.2f}-{end:.2f}", "--force-keyframes-at-cuts",
                  "--merge-output-format", "mp4", "--max-filesize", WINDOW_MAX_FILESIZE, "-o", _template(out)]
         try:
             for attempt in range(1, DOWNLOAD_ATTEMPTS + 1):
