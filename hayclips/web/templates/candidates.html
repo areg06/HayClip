@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Candidates · {{ project.name }}{% endblock %}
+{% block content %}
+<h1>Candidates</h1>
+<div class="banner">Scores are a ranking heuristic built from free auto-captions, not a virality prediction.
+Read each window and pick the 2–3 that make sense on their own.</div>
+{% if not cands %}<p class="muted">No candidates yet. Fetch captions and generate candidates on the <a href="/p/{{ row.id }}">project page</a>.</p>{% endif %}
+{% for x in cands %}{% set c = x.c %}
+<section class="card">
+  <h2>{{ c.start | stamp }}–{{ c.end | stamp }} · {{ (c.end - c.start) | round(1) }} s · score {{ c.score }}</h2>
+  <p class="meta">{{ x.explain }}</p>
+  <p lang="hy">{{ c.text[:420] }}{% if c.text | length > 420 %}…{% endif %}</p>
+  {% if x.clip %}
+    <p class="ok">Selected as {{ x.clip.id }} (#{{ x.clip.order }}){% if not x.clip.selected %} — currently unselected{% endif %}</p>
+  {% else %}
+  <form method="post" action="/p/{{ row.id }}/select">
+    {% include "_csrf.html" %}
+    <input type="hidden" name="candidate_id" value="{{ c.id }}">
+    <label>Title</label><input type="text" name="title" maxlength="200" lang="hy">
+    <label>Hook (optional, ≤45 characters, must quote the speaker faithfully)</label><input type="text" name="hook" maxlength="45" lang="hy">
+    <label>Why this window</label><input type="text" name="pick_note" maxlength="500">
+    <p><button class="primary" type="submit">Select this window</button></p>
+  </form>
+  {% endif %}
+</section>
+{% endfor %}
+{% endblock %}

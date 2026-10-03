@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Consent · {{ project.name }}{% endblock %}
+{% block content %}
+<h1>Creator consent for transcription</h1>
+<p>Transcription sends the audio of the selected clip windows (never the full episode) to Harmar, a paid third-party service.
+Record the creator's explicit permission. It is never assumed from creating a project.</p>
+{% if project.consent %}
+<section class="card"><h2>Recorded</h2><ul class="plain">
+{% for c in project.consent %}<li>{{ c.recorded_at }} · {{ c.provider }} / {{ c.scope }} · granted by {{ c.granted_by }} · recorded by {{ c.recorded_by }}{% if c.revoked_at %} <span class="bad">(revoked)</span>{% endif %}<div class="meta">{{ c.statement }}</div></li>{% endfor %}
+</ul></section>
+{% endif %}
+<section class="card">
+  <form method="post" action="/p/{{ row.id }}/consent">
+    {% include "_csrf.html" %}
+    <label>Who gave permission (creator / channel)</label><input type="text" name="granted_by" required maxlength="200">
+    <label>How and when they agreed (paste or describe the message)</label><textarea name="statement" required maxlength="2000"></textarea>
+    <label>Your name (recording this)</label><input type="text" name="recorded_by" required maxlength="100">
+    <label><input type="checkbox" name="confirm" value="yes" required> The creator explicitly agreed that clip windows of this video may be sent to Harmar for transcription.</label>
+    <p><button class="primary" type="submit">Record consent</button></p>
+  </form>
+</section>
+{% endblock %}

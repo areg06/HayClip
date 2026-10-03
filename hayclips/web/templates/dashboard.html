@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Projects{% endblock %}
+{% block content %}
+<h1>Projects</h1>
+<p class="muted">Turn a long Armenian conversation into a few vertical clip candidates for a human to review.
+Only use videos whose creator agreed to processing.</p>
+{% if error %}<div class="banner bad" role="alert">{{ error }}{% if hint %}<br><span class="muted">{{ hint }}</span>{% endif %}</div>{% endif %}
+
+<section class="card">
+  <h2>New project</h2>
+  <form method="post" action="/projects">
+    {% include "_csrf.html" %}
+    <label for="name">Project name</label>
+    <input id="name" name="name" type="text" required maxlength="120" value="{{ form_name or '' }}">
+    <label for="url">YouTube link (the creator must have given permission)</label>
+    <input id="url" name="url" type="text" required placeholder="https://www.youtube.com/watch?v=...">
+    <p><button class="primary" type="submit">Create project</button></p>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Your projects</h2>
+  {% if projects %}
+  <table><thead><tr><th>Name</th><th>Source</th><th>Created</th></tr></thead><tbody>
+  {% for p in projects %}
+  <tr><td><a href="/p/{{ p.id }}">{{ p.name }}</a></td><td class="muted">{{ p.source_url or '' }}</td>
+      <td class="muted">{{ p.created_at.strftime('%Y-%m-%d %H:%M') }}</td></tr>
+  {% endfor %}
+  </tbody></table>
+  {% else %}<p class="muted">No projects yet.</p>{% endif %}
+</section>
+
+{% if registrable %}
+<section class="card">
+  <h2>Open an existing pilot folder</h2>
+  <form method="post" action="/projects/register" class="row">
+    {% include "_csrf.html" %}
+    <select name="dir" aria-label="pilot folder">{% for d in registrable %}<option>{{ d }}</option>{% endfor %}</select>
+    <button type="submit">Open</button>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

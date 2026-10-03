@@ -1,0 +1,13 @@
+<form method="post" action="/p/{{ row.id }}/jobs/render">
+  {% include "_csrf.html" %}
+  {% if clip_id %}<input type="hidden" name="clip_id" value="{{ clip_id }}"><input type="hidden" name="from" value="review">{% endif %}
+  <div class="row">
+    <label><input type="checkbox" name="style_A" checked> A · active word</label>
+    <label><input type="checkbox" name="style_B"> B · one-word punch</label>
+    <label><input type="checkbox" name="style_C"> C · karaoke box</label>
+    <label><input type="checkbox" name="hook_enabled" checked> show hook (first 3 s)</label>
+    <label>caption bottom (y of 1280) <input name="caption_bottom" type="number" value="930" min="700" max="1100"></label>
+  </div>
+  <p><button type="submit">{{ 'Re-render this clip' if clip_id else 'Render selected clips' }}</button>
+  <span class="muted">Rendering is free and can be repeated.</span></p>
+</form>

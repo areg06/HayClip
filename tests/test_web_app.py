@@ -1,0 +1,308 @@
+"""Local operator web app: workflow, security controls and paid-step gating (needs the local Postgres)."""
+import json
+import re
+from pathlib import Path
+
+import pytest
+from fastapi.testclient import TestClient
+
+from hayclips import jsonio
+from hayclips.jobs import queue
+from hayclips.models import Candidate, Clip, candidate_id
+from hayclips.project import ProjectRepo, media_record
+from hayclips.web.app import create_app
+
+BASE = "http://127.0.0.1:8765"
+ORIGIN = {"Origin": BASE}
+VID = "abcDEF12345"
+SECRET = "dummy-secret-key-123"
+
+
+@pytest.fixture
+def env(pg_dsn, tmp_path, monkeypatch):
+    monkeypatch.setenv("HARMAR_API_KEY", SECRET)
+    roots = {"projects": tmp_path / "projects", "repo": tmp_path / "repo"}
+    roots["repo"].mkdir()
+    app = create_app(dsn=pg_dsn, projects_root=roots["projects"], repo_root=roots["repo"], port=8765)
+    client = TestClient(app, base_url=BASE)
+    return client, roots, pg_dsn
+
+
+def csrf(client, path="/"):
+    r = client.get(path)
+    assert r.status_code == 200, r.text[:300]
+    return re.search(r'name="csrf" value="([0-9a-f]{64})"', r.text).group(1)
+
+
+def post(client, path, data=None, token=None, headers=ORIGIN):
+    data = dict(data or {})
+    data.setdefault("csrf", token if token is not None else csrf(client))
+    return client.post(path, data=data, headers=headers, follow_redirects=False)
+
+
+def jobs(dsn, pid):
+    from hayclips import db
+    with db.connect(dsn) as c:
+        return queue.for_project(c, pid)
+
+
+def make_project(client, name="Test pod"):
+    r = post(client, "/projects", {"name": name, "url": f"https://youtu.be/{VID}"})
+    assert r.status_code == 303
+    return r.headers["location"].split("/")[2]
+
+
+def project_dir(dsn, pid) -> Path:
+    from hayclips import db
+    with db.connect(dsn) as c:
+        return Path(c.execute("SELECT dir FROM projects WHERE id = %s", (pid,)).fetchone()["dir"])
+
+
+def with_candidates(dsn, pid):
+    repo = ProjectRepo(project_dir(dsn, pid))
+    cands = [Candidate(id=candidate_id(a, b), start=a, end=b, score=3.0, text="Երեկ մենք գնացինք շուկա։",
+                       features={"ending": 2.0}) for a, b in ((100, 140), (300, 345), (600, 650))]
+    repo.save_candidates(cands, {})
+    return repo, cands
+
+
+def with_rendered_clip(dsn, pid, *, audio=True):
+    """A selected clip with a fake render and audio artifact (bytes only; no video processing)."""
+    repo, cands = with_candidates(dsn, pid)
+    clip = repo.select(cands[0].id, title="Փորձնական", hook="Ի՞նչ ես կարդում հիմա")
+    cdir = repo.clip_dir(clip.id)
+    (cdir / "render").mkdir(parents=True, exist_ok=True)
+    (cdir / "render" / "A.mp4").write_bytes(bytes(range(256)) * 40)
+    (cdir / "render" / "captions.srt").write_text("1\n00:00:00,100 --> 00:00:01,500\nԵրեկ մենք գնացինք\n", encoding="utf-8")
+    jsonio.write_json(cdir / "render" / "render.json", {
+        "cut": {"start": 4.9, "end": 40.2, "mode": "auto", "note": None, "source_start": 99.9, "source_end": 135.2},
+        "alignment": {"method": "provenance", "lag_s": 0.0, "confidence": 1.0, "note": ""},
+        "framing": "speaker crop, 3 camera shots", "audio": "loudnorm", "word_source": "Harmar word timestamps",
+        "hook": "Ի՞նչ ես կարդում հիմա", "outputs": {"A": {"path": "render/A.mp4", "width": 720, "height": 1280,
+                                                          "duration": 35.3, "events": 40}},
+        "checks": ["shot at 3.0s: 2 faces; check the framing"], "first_word_at": 0.1, "first_3s_text": "Երեկ"})
+    if audio:
+        from hayclips.models import Window
+        (cdir / "audio.m4a").write_bytes(b"fake-audio-bytes")
+        (cdir / "wide.mp4").write_bytes(b"fake-wide-bytes")
+        repo.save_window(Window(clip_id=clip.id, source_start=95.0, source_end=145.0, pad_start=5.0,
+                                wide=media_record(cdir / "wide.mp4", "wide.mp4", "wide", 50.0),
+                                audio=media_record(cdir / "audio.m4a", "audio.m4a", "audio", 50.0), source_ref=VID))
+    return repo, clip
+
+
+# ----- workflow ---------------------------------------------------------------------------------
+
+def test_create_project_and_enqueue_first_steps(env):
+    client, roots, dsn = env
+    pid = make_project(client)
+    d = project_dir(dsn, pid)
+    assert d.parent == roots["projects"].resolve()
+    assert ProjectRepo(d).load().source["url"] == f"https://www.youtube.com/watch?v={VID}"
+    assert post(client, f"/p/{pid}/jobs/import_captions").status_code == 303
+    assert post(client, f"/p/{pid}/jobs/generate_candidates",
+                {"min_seconds": "20", "max_seconds": "50", "count": "4"}).status_code == 303
+    got = {j["type"]: j for j in jobs(dsn, pid)}
+    assert got["import_captions"]["pool"] == "io"
+    assert got["generate_candidates"]["payload"]["count"] == 4
+    page = client.get(f"/p/{pid}")
+    assert page.status_code == 200 and "Paid transcription is disabled in this environment" in page.text
+
+
+@pytest.mark.parametrize("bad", ["--exec=touch /tmp/pwn", "-o/tmp/x", "file:///etc/passwd",
+                                 f"https://evil.example/watch?v={VID}", "", "javascript:alert(1)"])
+def test_invalid_source_links_create_nothing(env, bad):
+    client, roots, dsn = env
+    r = post(client, "/projects", {"name": "x", "url": bad})
+    assert r.status_code == 400 and "banner bad" in r.text
+    assert not roots["projects"].exists() or not any(roots["projects"].iterdir())
+
+
+def test_select_reorder_unselect_keep_stable_ids(env):
+    client, roots, dsn = env
+    pid = make_project(client)
+    repo, cands = with_candidates(dsn, pid)
+    for c in cands[:2]:
+        assert post(client, f"/p/{pid}/select", {"candidate_id": c.id, "title": "t", "hook": "", "pick_note": ""}).status_code == 303
+    a, b = [c.id for c in repo.load().ordered()]
+    post(client, f"/p/{pid}/clips/{b}/move", {"dir": "up"})
+    assert [c.id for c in repo.load().ordered()] == [b, a]
+    post(client, f"/p/{pid}/clips/{a}/selected", {"value": "no"})
+    p = repo.load()
+    assert [c.id for c in p.ordered()] == [b] and p.clip(a).selected is False
+    assert {c.candidate_id for c in p.clips} == {cands[0].id, cands[1].id}
+    post(client, f"/p/{pid}/jobs/fetch_windows")
+    fetch = [j for j in jobs(dsn, pid) if j["type"] == "fetch_windows"][0]
+    assert fetch["payload"]["clip_ids"] == [b]
+
+
+def test_edit_hook_validation_and_trim(env):
+    client, roots, dsn = env
+    pid = make_project(client)
+    repo, clip = with_rendered_clip(dsn, pid)
+    r = post(client, f"/p/{pid}/clips/{clip.id}/edit", {"hook": "x" * 46, "from": "review"})
+    assert "45 characters" in r.headers["location"] or "45%20characters" in r.headers["location"]
+    post(client, f"/p/{pid}/clips/{clip.id}/edit", {"title": "նոր", "trim": "5.0:30.5"})
+    c = repo.load().clip(clip.id)
+    assert c.title == "նոր" and (c.trim.caption_start, c.trim.caption_end) == (5.0, 30.5)
+    post(client, f"/p/{pid}/clips/{clip.id}/edit", {"trim": "auto"})
+    assert repo.load().clip(clip.id).trim is None
+
+
+# ----- paid gating ------------------------------------------------------------------------------
+
+def test_paid_disabled_banner_and_direct_post_refused(env):
+    client, roots, dsn = env
+    pid = make_project(client)
+    with_rendered_clip(dsn, pid)
+    post(client, f"/p/{pid}/consent", {"granted_by": "creator", "statement": "said yes by email", "recorded_by": "op", "confirm": "yes"})
+    page = client.get(f"/p/{pid}/transcribe")
+    assert "Paid transcription is disabled in this environment" in page.text and "Confirm paid transcription" not in page.text
+    r = post(client, f"/p/{pid}/transcribe", {"confirmed_by": "op", "i_understand": "yes"})
+    assert "disabled" in r.headers["location"]
+    assert not [j for j in jobs(dsn, pid) if j["type"] == "transcribe"]
+
+
+def test_consent_required_then_confirm_enqueues_once(env, monkeypatch):
+    client, roots, dsn = env
+    monkeypatch.setenv("HAYCLIPS_ALLOW_PAID_HARMAR", "1")      # server-side opt-in (no network in this test)
+    pid = make_project(client)
+    repo, clip = with_rendered_clip(dsn, pid)
+    page = client.get(f"/p/{pid}/transcribe")
+    assert "No consent recorded" in page.text and "Confirm paid transcription" not in page.text
+    r = post(client, f"/p/{pid}/transcribe", {"confirmed_by": "op", "i_understand": "yes"})
+    assert "consent" in r.headers["location"]
+    post(client, f"/p/{pid}/consent", {"granted_by": "creator", "statement": "agreed in a call on 1 Oct", "recorded_by": "op", "confirm": "yes"})
+    page = client.get(f"/p/{pid}/transcribe")
+    assert "Confirm paid transcription" in page.text and "NEW paid submission" in page.text
+    assert post(client, f"/p/{pid}/transcribe", {"confirmed_by": "op"}).headers["location"].count("tick") == 1
+    for _ in range(2):
+        assert post(client, f"/p/{pid}/transcribe", {"confirmed_by": "op", "i_understand": "yes"}).status_code == 303
+    paid = [j for j in jobs(dsn, pid) if j["type"] == "transcribe"]
+    assert len(paid) == 1 and paid[0]["payload"] == {"clip_ids": [clip.id], "confirmed_by": "op"}
+    assert paid[0]["max_attempts"] == 1
+
+
+def test_consent_is_never_inferred(env):
+    client, roots, dsn = env
+    pid = make_project(client)
+    assert ProjectRepo(project_dir(dsn, pid)).load().consent == []
+    r = post(client, f"/p/{pid}/consent", {"granted_by": "creator", "statement": "", "recorded_by": "op", "confirm": "yes"})
+    assert r.status_code == 303 and ProjectRepo(project_dir(dsn, pid)).load().consent == []
+
+
+def test_render_double_submit_is_one_job_and_edit_makes_a_new_one(env):
+    client, roots, dsn = env
+    pid = make_project(client)
+    repo, clip = with_rendered_clip(dsn, pid)
+    form = {"style_A": "on", "style_B": "on", "caption_bottom": "930", "hook_enabled": "on"}
+    post(client, f"/p/{pid}/jobs/render", form)
+    post(client, f"/p/{pid}/jobs/render", form)
+    renders = [j for j in jobs(dsn, pid) if j["type"] == "render"]
+    assert len(renders) == 1 and renders[0]["payload"]["styles"] == ["A", "B"]
+    post(client, f"/p/{pid}/clips/{clip.id}/edit", {"title": "changed"})
+    post(client, f"/p/{pid}/jobs/render", form)
+    assert len([j for j in jobs(dsn, pid) if j["type"] == "render"]) == 2
+
+
+# ----- request security -------------------------------------------------------------------------
+
+def test_dns_rebinding_host_is_rejected(env):
+    client, _, _ = env
+    assert client.get("/", headers={"Host": "attacker.example:8765"}).status_code == 421
+
+
+def test_cross_origin_and_missing_csrf_are_rejected(env):
+    client, roots, dsn = env
+    token = csrf(client)
+    assert post(client, "/projects", {"name": "x", "url": VID}, token=token,
+                headers={"Origin": "http://evil.example"}).status_code == 403
+    assert post(client, "/projects", {"name": "x", "url": VID}, token=token, headers={}).status_code == 403
+    assert post(client, "/projects", {"name": "x", "url": VID}, token="").status_code == 403
+    assert post(client, "/projects", {"name": "x", "url": VID}, token="0" * 64).status_code == 403
+    assert client.put("/projects", headers=ORIGIN).status_code == 405
+    assert not roots["projects"].exists()
+
+
+def test_security_headers(env):
+    client, _, _ = env
+    h = client.get("/").headers
+    assert "frame-ancestors 'none'" in h["content-security-policy"] and "unsafe-inline" not in h["content-security-policy"]
+    assert h["x-content-type-options"] == "nosniff" and h["x-frame-options"] == "DENY"
+
+
+def test_media_range_download_and_traversal(env, tmp_path):
+    client, roots, dsn = env
+    pid = make_project(client)
+    repo, clip = with_rendered_clip(dsn, pid)
+    base = f"/p/{pid}/media/{clip.id}"
+    r = client.get(f"{base}/A.mp4", headers={"Range": "bytes=0-9"})
+    assert r.status_code == 206 and r.content == bytes(range(10))
+    d = client.get(f"{base}/captions.srt?download=1")
+    assert d.status_code == 200 and "attachment" in d.headers["content-disposition"]
+    for path in [f"{base}/../../project.json", f"{base}/%2e%2e%2fproject.json", f"{base}/window.json",
+                 f"/p/{pid}/media/clp_0000000000/A.mp4", f"/p/{pid}/media/..%2f..%2f/A.mp4", f"{base}/B.mp4",
+                 f"/p/prj_0000000000/media/{clip.id}/A.mp4"]:
+        assert client.get(path).status_code == 404, path
+    outside = tmp_path / "outside.mp4"
+    outside.write_bytes(b"secret")
+    a = repo.render_dir(clip.id) / "A.mp4"
+    a.unlink()
+    a.symlink_to(outside)
+    assert client.get(f"{base}/A.mp4").status_code == 404
+
+
+def test_review_page_and_decision_stored(env):
+    client, roots, dsn = env
+    pid = make_project(client)
+    repo, clip = with_rendered_clip(dsn, pid)
+    page = client.get(f"/p/{pid}/review")
+    assert page.status_code == 200 and "unreviewed machine output" in page.text and "CHECK: shot at 3.0s" in page.text
+    assert post(client, f"/p/{pid}/clips/{clip.id}/review",
+                {"would_post": "maybe", "style": "A", "minutes_to_fix": "12", "notes": "cut late", "reviewer": "ed"}).status_code == 303
+    assert post(client, f"/p/{pid}/clips/{clip.id}/review", {"would_post": "definitely"}).headers["location"].endswith("maybe")
+    from hayclips import db
+    with db.connect(dsn) as c:
+        rows = c.execute("SELECT * FROM review_decisions WHERE project_id = %s", (pid,)).fetchall()
+    assert len(rows) == 1 and rows[0]["minutes_to_fix"] == 12 and rows[0]["style"] == "A"
+    assert "12 min" in client.get(f"/p/{pid}/review").text
+
+
+def test_register_existing_only_within_allowlist(env, tmp_path):
+    client, roots, dsn = env
+    pilot = roots["repo"] / "pilot-07"
+    ProjectRepo(pilot).init("pilot seven", {"kind": "youtube", "url": f"https://www.youtube.com/watch?v={VID}"})
+    elsewhere = tmp_path / "elsewhere"
+    ProjectRepo(elsewhere).init("nope", {})
+    assert "pilot-07" in client.get("/").text
+    r = post(client, "/projects/register", {"dir": "pilot-07"})
+    assert r.status_code == 303 and r.headers["location"].startswith("/p/prj_")
+    for bad in ["../elsewhere", str(elsewhere), "elsewhere", "pilot-07/../../elsewhere"]:
+        r = post(client, "/projects/register", {"dir": bad})
+        assert r.headers["location"].startswith("/?msg="), bad
+    from hayclips import db
+    with db.connect(dsn) as c:
+        assert [r["dir"] for r in c.execute("SELECT dir FROM projects").fetchall()] == [str(pilot.resolve())]
+
+
+def test_no_secret_in_any_page(env, monkeypatch):
+    client, roots, dsn = env
+    monkeypatch.setenv("HAYCLIPS_ALLOW_PAID_HARMAR", "1")
+    pid = make_project(client)
+    repo, clip = with_rendered_clip(dsn, pid)
+    post(client, f"/p/{pid}/consent", {"granted_by": "c", "statement": "yes", "recorded_by": "op", "confirm": "yes"})
+    for path in ["/", f"/p/{pid}", f"/p/{pid}/candidates", f"/p/{pid}/consent", f"/p/{pid}/transcribe",
+                 f"/p/{pid}/review", f"/p/{pid}/jobs"]:
+        r = client.get(path)
+        assert r.status_code == 200, path
+        assert SECRET not in r.text and str(roots["projects"]) not in r.text, path
+
+
+def test_cancel_job(env):
+    client, roots, dsn = env
+    pid = make_project(client)
+    post(client, f"/p/{pid}/jobs/import_captions")
+    job = jobs(dsn, pid)[0]
+    r = post(client, f"/p/{pid}/jobs/{job['id']}/cancel")
+    assert "cancelled" in r.headers["location"]
+    assert jobs(dsn, pid)[0]["state"] == "CANCELLED"

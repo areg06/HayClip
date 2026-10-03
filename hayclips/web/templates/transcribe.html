@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Transcription · {{ project.name }}{% endblock %}
+{% block content %}
+<h1>Transcription (paid)</h1>
+{% if not paid_enabled %}<div class="banner bad" role="alert">Paid transcription is disabled in this environment.
+Nothing can be sent to Harmar from this server.</div>{% endif %}
+<p class="muted">Harmar charges per second of audio when a job is submitted (rounded up per clip) and refunds failed jobs.
+Only the selected clip windows are sent, as audio only. A transcript is reused only for the exact file it was made from.</p>
+
+<section class="card">
+  <h2>Consent</h2>
+  {% if consent %}<p class="ok">Recorded: granted by {{ consent.granted_by }} on {{ consent.recorded_at }} ({{ consent.id }}).</p>
+  {% else %}<p class="bad">No consent recorded. <a href="/p/{{ row.id }}/consent">Record the creator's consent</a> before anything can be sent.</p>{% endif %}
+</section>
+
+<section class="card">
+  <h2>Plan</h2>
+  {% if error %}<div class="banner bad">{{ error.message }}{% if error.hint %}<br><span class="muted">{{ error.hint }}</span>{% endif %}</div>{% endif %}
+  {% if plans %}
+  <table><thead><tr><th>#</th><th>Clip</th><th>Action</th><th>Seconds</th><th>Note</th></tr></thead><tbody>
+  {% for p in plans %}
+  <tr><td>{{ p.order }}</td><td>{{ p.clip_id }}</td>
+      <td>{{ {'reuse': 'reuse existing transcript (free)', 'resume': 'resume polling an existing job (free)', 'new': 'NEW paid submission', 'reconcile': 'NEEDS RECONCILIATION', 'in_progress': 'another process is submitting'}[p.action] }}</td>
+      <td>{{ p.seconds if p.action == 'new' else '' }}</td><td class="muted">{{ p.note }}</td></tr>
+  {% endfor %}
+  </tbody></table>
+  {% elif not error %}<p class="muted">No selected clips.</p>{% endif %}
+  <p>New seconds: <strong>{{ new_seconds }}</strong> / operation limit {{ limits.max_paid_seconds_per_operation }} ·
+     project used {{ project_used }} / {{ limits.max_paid_seconds_per_project }} ·
+     24 h used {{ day_used }} / {{ limits.max_paid_seconds_per_day }} ·
+     balance must stay ≥ {{ (100 * (1 + limits.balance_margin)) | round | int }}% of the need</p>
+  <p class="muted">Server: paid mode {{ 'enabled' if paid_enabled else 'disabled' }} · Harmar key {{ 'present' if key_present else 'absent' }}.</p>
+  {% if budget_error %}<div class="banner bad">{{ budget_error }}</div>{% endif %}
+</section>
+
+{% if needs_reconcile or unknowns %}
+<section class="card">
+  <h2>Reconciliation needed</h2>
+  <p class="bad">A previous submission may have been accepted by Harmar without us recording the job id. Nothing will be submitted until a person checks.</p>
+  <ol>
+    <li>Open the Harmar dashboard and look for a job around the attempt time.</li>
+    <li>Then, in a terminal: <code>.venv/bin/python -m hayclips reconcile {{ cli_ref }} &lt;clip_id&gt; --show</code>,
+        followed by <code>--attach-job-id JOB --by NAME</code> or <code>--not-created --by NAME --evidence TEXT</code>.</li>
+  </ol>
+</section>
+{% elif work and consent and paid_enabled and not budget_error and not error %}
+<section class="card">
+  <h2>Confirm</h2>
+  <form method="post" action="/p/{{ row.id }}/transcribe">
+    {% include "_csrf.html" %}
+    <label><input type="checkbox" name="i_understand" value="yes" required> Send {{ work | length }} clip window(s), {{ new_seconds }} new seconds, to Harmar. This is charged.</label>
+    <label>Your name</label><input type="text" name="confirmed_by" required maxlength="100">
+    <p><button class="primary" type="submit" {{ '' if key_present else 'disabled' }}>Confirm paid transcription</button></p>
+  </form>
+</section>
+{% elif not work and plans and not error %}
+<p class="ok">Every selected clip already has a transcript. Nothing to pay for.</p>
+{% endif %}
+{% endblock %}
