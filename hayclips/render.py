@@ -92,9 +92,11 @@ def render_clip(repo: ProjectRepo, clip: Clip, *, styles: list[str], caption_bot
     audio = F.plan_audio(src, cs, ce, settings)
     flags: list[str] = []
     if window.wide is not None and src_media is window.wide:
-        plan, recomputed = load_or_plan(repo.clip_dir(clip.id) / "crop.json", src, src_media.sha256)
+        plan_path = repo.clip_dir(clip.id) / "crop.json"
+        had_plan = plan_path.exists()
+        plan, recomputed = load_or_plan(plan_path, src, src_media.sha256)
         vf, flags, framing = frame_filter(plan, cs)
-        if recomputed:
+        if recomputed and had_plan:          # a first plan for a new clip is not a warning
             flags.append("crop plan recomputed for the current wide.mp4")
     else:
         vf, framing = "", "preview (already 720x1280)"

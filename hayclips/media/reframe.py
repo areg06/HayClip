@@ -169,9 +169,10 @@ def frame_filter(plan: dict, start: float) -> tuple[str, list[str], str]:
         if end is not None and end <= start:
             continue
         used += 1
-        where = f"shot at {sh['start'] - start:.1f}s"
+        at = float(sh["start"]) - start
+        where = f"shot at {at:.1f}s" if at > 0 else "first shot (from the start)"
         if sh["face_hits"] == 0:
-            flags.append(f"{where}: no face found, kept the previous crop")
+            flags.append(f"{where}: no face found, " + ("kept the previous crop" if k else "used the centre of the frame"))
         elif sh["max_faces"] > 1 or (sh["drift"] or 0) > 0.35:
             flags.append(f"{where}: {sh['max_faces']} faces / drift {sh['drift']}; check the framing")
     # nested if(): the crop switches hard at each camera cut (trimmed input starts at t=0)
