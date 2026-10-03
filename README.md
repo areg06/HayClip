@@ -65,7 +65,13 @@ Other operator commands (`.venv/bin/python -m hayclips ...`):
 - `reconcile P CLIP --show | --attach-job-id JOB --by NAME | --not-created --by NAME --evidence TEXT`
 - `migrate P`: convert an old `suggestions.json` pilot (already done for pilots 01–03).
 
-## Local web app (Phase 1b)
+## Local web app (Phases 1b–1d)
+
+Phase 1d turned it into a creator product: homepage, dashboard, YouTube **and upload** sources (uploads use a
+free local discovery transcript), Choose clips with in-app previews and trims, an "Add captions" cost
+screen that processes only the chosen clips, a clip editor (caption presets, drag-to-position, hook, text
+correction, trim, framing, TikTok/Reels/Shorts safe zones), export, a planning calendar and a Brand Kit.
+See `docs/saas/phase-1d-report.md` and `docs/product/principles.md`.
 
 ```bash
 scripts/dev-up.sh            # socket-only Postgres + worker + web app on http://127.0.0.1:8765/
