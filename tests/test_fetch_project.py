@@ -159,3 +159,66 @@ def test_cli_reports_errors_with_nonzero_exit(repo, fake, monkeypatch):
     r = subprocess.run([sys.executable, str(ROOT / "fetch_clips.py"), str(repo.root)], capture_output=True,
                        text=True, timeout=120, env=dict(os.environ))
     assert r.returncode != 0 and "unavailable" in r.stderr and "Traceback" not in r.stderr
+
+
+# ----- public API: fetch_selected_clips (Phase 1c) -------------------------------------------------
+
+def test_public_api_fetches_only_the_listed_selected_clips(repo, fake):
+    from hayclips.fetch import fetch_selected_clips
+    first, second = repo.load().ordered()
+    ids_before = [c.id for c in repo.load().clips]
+    results = fetch_selected_clips(repo, [second.id])
+    assert [(r.clip_id, r.status) for r in results] == [(second.id, "fetched")]
+    assert repo.load_window(first.id) is None and repo.load_window(second.id).clip_id == second.id
+    assert len(downloads(fake)) == 1
+    assert [c.id for c in repo.load().clips] == ids_before          # stable ids untouched
+
+
+def test_public_api_rejects_unselected_or_unknown_ids(repo, fake):
+    from hayclips.errors import PipelineError
+    from hayclips.fetch import fetch_selected_clips
+    first, _ = repo.load().ordered()
+    repo.update_clip(first.id, selected=False)
+    for ids in ([first.id], ["clp_0000000000"]):
+        with pytest.raises(PipelineError, match="not selected"):
+            fetch_selected_clips(repo, ids)
+    assert downloads(fake) == []
+
+
+def test_public_api_reuses_verified_artifacts_and_keeps_alignment_metadata(repo, fake):
+    from hayclips.fetch import fetch_selected_clips
+    fetch_selected_clips(repo)
+    clip = repo.load().ordered()[0]
+    before = (repo.clip_dir(clip.id) / "window.json").read_bytes()
+    n = len(downloads(fake))
+    assert [r.status for r in fetch_selected_clips(repo)] == ["skipped", "skipped"]
+    assert len(downloads(fake)) == n
+    assert (repo.clip_dir(clip.id) / "window.json").read_bytes() == before
+    w = repo.load_window(clip.id)
+    assert w.audio.derived_from["sha256"] == w.wide.sha256 == sha256_file(repo.clip_dir(clip.id) / "wide.mp4")
+
+
+def test_public_api_cleans_partial_files_after_a_failed_download(repo, fake, monkeypatch):
+    from hayclips.fetch import fetch_selected_clips
+    clip = repo.load().ordered()[0]
+    cdir = repo.clip_dir(clip.id)
+    cdir.mkdir(parents=True)
+    (cdir / ".wide.mp4.pending").write_bytes(b"leftover from a crash")
+    monkeypatch.setenv("FAKE_YTDLP_MODE", "fail_unavailable")
+    results = fetch_selected_clips(repo, [clip.id])
+    assert results[0].status == "error"
+    assert sorted(p.name for p in cdir.iterdir()) == []                # no pending files, no work dirs
+
+
+def test_public_api_reports_progress_and_can_stop_between_clips(repo, fake):
+    from hayclips.fetch import fetch_selected_clips
+    seen = []
+    results = fetch_selected_clips(repo, on_progress=lambda k, n, cid: seen.append((k, n)),
+                                   should_stop=lambda: len(seen) >= 1)
+    assert seen == [(0, 2)] and len(results) == 1
+
+
+def test_worker_and_cli_use_only_the_public_fetch_api():
+    for f in ("hayclips/jobs/handlers.py", "fetch_clips.py"):
+        text = (ROOT / f).read_text(encoding="utf-8")
+        assert "fetch_selected_clips" in text and "_fetch_clip" not in text and "_caption_writer" not in text

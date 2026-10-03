@@ -124,12 +124,28 @@ def _fetch_clip(repo: ProjectRepo, clip: Clip, source: SourceProvider, settings:
     return FetchResult(clip.id, "fetched", f"{files.end - files.start:.1f}s window")
 
 
-def fetch_project(repo: ProjectRepo, *, source_factory: Callable[[dict, Settings], SourceProvider] | None = None,
-                  settings: Settings | None = None, raise_errors: bool = False) -> list[FetchResult]:
-    """Fetch every selected clip in display order. One clip's failure does not stop the others
-    (unless raise_errors=True); results say what happened to each."""
+def fetch_selected_clips(repo: ProjectRepo, clip_ids: list[str] | None = None, *,
+                         source_factory: Callable[[dict, Settings], SourceProvider] | None = None,
+                         settings: Settings | None = None, raise_errors: bool = False,
+                         on_progress: Callable[[int, int, str], None] | None = None,
+                         should_stop: Callable[[], bool] | None = None) -> list[FetchResult]:
+    """Public fetch API used by the CLI and the worker.
+
+    Fetches the selected clips (all of them, or only `clip_ids`, which must all be selected) in display
+    order. Verified artifacts are reused; one clip's failure does not stop the others unless
+    raise_errors=True. `on_progress(k, n, clip_id)` is called before each clip and `should_stop()`
+    between clips (the worker uses it for cancellation and lease loss)."""
     settings = settings or load_settings()
     project = repo.load()
+    clips = project.ordered()
+    if clip_ids is not None:
+        selected = {c.id for c in clips}
+        missing = [cid for cid in dict.fromkeys(clip_ids) if cid not in selected]
+        if missing:
+            raise PipelineError(f"not selected clips: {', '.join(missing)}",
+                                hint="only selected clips can be fetched; select them first")
+        wanted = set(clip_ids)
+        clips = [c for c in clips if c.id in wanted]
     source = (source_factory or default_source_factory)(project.source, settings)
     captions = None
     writer = _caption_writer()
@@ -137,7 +153,11 @@ def fetch_project(repo: ProjectRepo, *, source_factory: Callable[[dict, Settings
     if writer and srts:
         captions = writer[0](srts[0])
     results = []
-    for clip in project.ordered():
+    for k, clip in enumerate(clips):
+        if should_stop is not None and should_stop():
+            break
+        if on_progress is not None:
+            on_progress(k, len(clips), clip.id)
         try:
             results.append(_fetch_clip(repo, clip, source, settings, captions))
         except PipelineError as err:
@@ -145,3 +165,10 @@ def fetch_project(repo: ProjectRepo, *, source_factory: Callable[[dict, Settings
                 raise
             results.append(FetchResult(clip.id, "error", str(err), err))
     return results
+
+
+def fetch_project(repo: ProjectRepo, *, source_factory: Callable[[dict, Settings], SourceProvider] | None = None,
+                  settings: Settings | None = None, raise_errors: bool = False) -> list[FetchResult]:
+    """Fetch every selected clip (kept for existing callers; same as fetch_selected_clips(repo))."""
+    return fetch_selected_clips(repo, None, source_factory=source_factory, settings=settings,
+                                raise_errors=raise_errors)

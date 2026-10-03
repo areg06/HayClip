@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 
 from hayclips.errors import PipelineError
-from hayclips.fetch import fetch_project
+from hayclips.fetch import fetch_selected_clips
 from hayclips.project import ProjectRepo
 
 
@@ -20,7 +20,7 @@ def main(argv: list[str]) -> int:
         return 0 if argv and argv[0] in ("-h", "--help") else 2
     repo = ProjectRepo(Path(argv[0]))
     try:
-        results = fetch_project(repo)
+        results = fetch_selected_clips(repo)
         project = repo.load()
     except PipelineError as exc:
         print(f"error: {exc}", file=sys.stderr)

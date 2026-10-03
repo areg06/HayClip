@@ -102,29 +102,14 @@ def generate_candidates(job: dict, ctx: Context) -> dict:
 
 def fetch_windows(job: dict, ctx: Context) -> dict:
     p = contracts.validate("fetch_windows", job.get("payload") or {})
-    from ..fetch import FetchResult, _caption_writer, _fetch_clip, default_source_factory
-    project = ctx.repo.load()
-    clips = project.ordered()
-    if p["clip_ids"] is not None:
-        wanted = set(p["clip_ids"])
-        missing = wanted - {c.id for c in clips}
-        if missing:
-            raise PipelineError(f"not selected clips: {', '.join(sorted(missing))}")
-        clips = [c for c in clips if c.id in wanted]
-    source = default_source_factory(project.source, ctx.settings)
-    writer = _caption_writer()
-    srts = sorted((ctx.repo.root / "source").glob("*.srt"))
-    captions = writer[0](srts[0]) if writer and srts else None
-    results, first_error = [], None
-    for k, clip in enumerate(clips):
-        _check_cancel(ctx)
-        ctx.progress(k / max(len(clips), 1), f"window {k + 1}/{len(clips)}")
-        try:
-            r = _fetch_clip(ctx.repo, clip, source, ctx.settings, captions)
-        except PipelineError as err:
-            r = FetchResult(clip.id, "error", str(err), err)
-            first_error = first_error or err
-        results.append({"clip_id": r.clip_id, "status": r.status, "message": r.message})
+    from ..fetch import fetch_selected_clips
+    found = fetch_selected_clips(
+        ctx.repo, p["clip_ids"], settings=ctx.settings,
+        on_progress=lambda k, n, cid: ctx.progress(k / max(n, 1), f"window {k + 1}/{n}"),
+        should_stop=ctx.cancelled)
+    _check_cancel(ctx)
+    results = [{"clip_id": r.clip_id, "status": r.status, "message": r.message} for r in found]
+    first_error = next((r.error for r in found if r.error is not None), None)
     if first_error is not None:
         first_error.job_result = {"clips": results}
         raise first_error
