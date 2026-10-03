@@ -122,6 +122,20 @@ def validate_plan(plan: dict) -> dict:
     return plan
 
 
+def shots_digest(plan: dict) -> str:
+    import hashlib
+    import json
+    shots = [[round(float(sh.get("start", 0)), 3), sh.get("x")] for sh in plan.get("shots", [])]
+    return hashlib.sha256(json.dumps(shots).encode()).hexdigest()
+
+
+def framing_adjusted(plan: dict | None) -> bool | None:
+    """True if someone edited the crop plan after it was computed; None if unknown (no plan/no baseline)."""
+    if not plan or not plan.get("auto_shots_sha256"):
+        return None
+    return shots_digest(plan) != plan["auto_shots_sha256"]
+
+
 def load_or_plan(plan_path: Path, video: Path, video_sha256: str) -> tuple[dict, bool]:
     """Cached plan if it was computed from these exact bytes, else a fresh one. Returns (plan, recomputed)."""
     plan = jsonio.read_json(plan_path, default=None)
@@ -130,8 +144,13 @@ def load_or_plan(plan_path: Path, video: Path, video_sha256: str) -> tuple[dict,
             # legacy plans (pilot-03) predate the hash field; adopt them for the bytes they were made from
             plan = {**plan, "source_sha256": video_sha256, "mode": plan.get("mode", "crop")}
             jsonio.write_json(plan_path, plan)
+        if "auto_shots_sha256" not in plan:
+            # baseline for "framing manually adjusted": plans written before Phase 1c count as automatic
+            plan = {**plan, "auto_shots_sha256": shots_digest(plan)}
+            jsonio.write_json(plan_path, plan)
         return validate_plan(plan), False
     plan = plan_crop(video)
+    plan["auto_shots_sha256"] = shots_digest(plan)
     jsonio.write_json(plan_path, plan)
     return validate_plan(plan), True
 

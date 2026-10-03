@@ -74,3 +74,14 @@ def test_two_faces_are_one_shot_and_flagged_for_a_human():
     assert len(plan["shots"]) == 1 and plan["shots"][0]["max_faces"] == 2   # no ping-pong between faces
     _, flags, _ = frame_filter(plan, 0.0)
     assert flags and "2 faces" in flags[0]
+
+
+def test_framing_adjusted_detects_hand_edits_only():
+    from hayclips.media.reframe import framing_adjusted, shots_digest
+    plan = {"width": 1920, "height": 1080, "crop_w": 608, "mode": "crop",
+            "shots": [{"start": 0.0, "x": 600}, {"start": 3.2, "x": 900}]}
+    assert framing_adjusted(plan) is None                      # no baseline recorded: unknown, not "no"
+    plan["auto_shots_sha256"] = shots_digest(plan)
+    assert framing_adjusted(plan) is False
+    plan["shots"][1]["x"] = 904
+    assert framing_adjusted(plan) is True
