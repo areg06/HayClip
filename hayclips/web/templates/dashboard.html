@@ -23,7 +23,7 @@ Only use videos whose creator agreed to processing.</p>
   {% if projects %}
   <table><thead><tr><th>Name</th><th>Source</th><th>Created</th></tr></thead><tbody>
   {% for p in projects %}
-  <tr><td><a href="/p/{{ p.id }}">{{ p.name }}</a></td><td class="muted">{{ p.source_url or '' }}</td>
+  <tr><td><a href="/p/{{ p.id }}">{{ p.name }}</a>{% if p.storage_state == 'MISSING_STORAGE' %} <span class="tag bad">files missing</span>{% endif %}</td><td class="muted">{{ p.source_url or '' }}</td>
       <td class="muted">{{ p.created_at.strftime('%Y-%m-%d %H:%M') }}</td></tr>
   {% endfor %}
   </tbody></table>

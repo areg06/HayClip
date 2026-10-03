@@ -366,3 +366,46 @@ def test_review_shows_downloaded_window_and_reason_before_render(env):
     assert f"/p/{pid}/media/{clip.id}/wide.mp4" in page
     assert "Not rendered yet: it needs a transcript" in page
     assert f'action="/p/{pid}/clips/{clip.id}/review"' not in page     # no decision form for nothing
+
+
+# ----- MISSING_STORAGE (Phase 1c) ---------------------------------------------------------------
+
+def test_missing_project_folder_is_explained_and_blocks_processing(env):
+    import shutil
+    client, roots, dsn = env
+    pid = make_project(client, name="Gone pod")
+    token = csrf(client)
+    shutil.rmtree(project_dir(dsn, pid))
+    dash = client.get("/").text
+    assert "Gone pod" in dash and "files missing" in dash
+    page = client.get(f"/p/{pid}")
+    assert page.status_code == 200 and "local project files are missing" in page.text
+    r = post(client, f"/p/{pid}/jobs/import_captions", token=token)
+    assert r.status_code == 303 and "missing" in r.headers["location"]
+    assert jobs(dsn, pid) == []
+    assert not project_dir(dsn, pid).exists()                         # never recreated
+
+
+def test_stale_entry_removal_requires_typed_name_and_is_audited(env):
+    import shutil
+    from hayclips import db
+    client, roots, dsn = env
+    pid = make_project(client, name="Gone pod")
+    token = csrf(client)
+    shutil.rmtree(project_dir(dsn, pid))
+    r = post(client, f"/p/{pid}/remove", {"confirm_name": "wrong", "removed_by": "op"}, token=token)
+    assert "type the project name" in r.headers["location"].replace("%20", " ")
+    assert "Gone pod" in client.get("/").text
+    r = post(client, f"/p/{pid}/remove", {"confirm_name": "Gone pod", "removed_by": "op"}, token=token)
+    assert r.status_code == 303 and "Gone pod" not in client.get("/").text
+    with db.connect(dsn) as c:
+        assert c.execute("SELECT removed_by FROM projects WHERE id = %s", (pid,)).fetchone()["removed_by"] == "op"
+        assert c.execute("SELECT count(*) AS n FROM events WHERE kind = 'stale_project_removed'").fetchone()["n"] == 1
+
+
+def test_remove_is_refused_while_files_exist(env):
+    client, roots, dsn = env
+    pid = make_project(client, name="Here pod")
+    r = post(client, f"/p/{pid}/remove", {"confirm_name": "Here pod", "removed_by": "op"})
+    assert "only projects whose files are missing" in r.headers["location"].replace("%20", " ")
+    assert project_dir(dsn, pid).exists() and "Here pod" in client.get("/").text

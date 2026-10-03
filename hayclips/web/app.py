@@ -48,6 +48,12 @@ class NotFound(Exception):
     pass
 
 
+class MissingStorage(Exception):
+    def __init__(self, row):
+        super().__init__(row["id"])
+        self.row = row
+
+
 def hms(value) -> str:
     """Seconds as m:ss or h:mm:ss for people (SRT-style stamps stay in files)."""
     try:
@@ -98,8 +104,10 @@ def create_app(*, dsn: str | None = None, projects_root: Path | None = None, rep
         if not PROJECT_ID.match(pid):
             raise NotFound()
         row = c.execute("SELECT * FROM projects WHERE id = %s", (pid,)).fetchone()
-        if not row or not (Path(row["dir"]) / "project.json").is_file():
-            raise NotFound()      # unknown id, or the project folder was moved/deleted
+        if not row or row["removed_at"] is not None:
+            raise NotFound()
+        if queue.storage_state(row) == queue.MISSING_STORAGE:
+            raise MissingStorage(row)   # explained to the operator; never repaired automatically
         return row
 
     def repo_for(row) -> ProjectRepo:
@@ -139,11 +147,31 @@ def create_app(*, dsn: str | None = None, projects_root: Path | None = None, rep
     async def _nf(request, exc):
         return HTMLResponse("not found", status_code=404)
 
+    @app.exception_handler(MissingStorage)
+    async def _missing(request, exc):
+        if request.method != "GET" or request.url.path != f"/p/{exc.row['id']}":
+            return back(f"/p/{exc.row['id']}", "local project files are missing; nothing was queued or changed")
+        return page(request, "missing.html", row=None, project_row=exc.row,
+                    dir_name=Path(exc.row["dir"]).name, msg=request.query_params.get("msg"))
+
+    @app.post("/p/{pid}/remove")
+    async def remove_stale(request: Request, pid: str):
+        form = await request.form()
+        if not PROJECT_ID.match(pid):
+            raise NotFound()
+        with conn() as c:
+            try:
+                queue.remove_stale_project(c, pid, confirm_name=str(form.get("confirm_name", "")),
+                                           actor=str(form.get("removed_by", ""))[:100])
+            except PipelineError as exc:
+                return back(f"/p/{pid}", exc.message)
+        return back("/", "stale project entry removed (its jobs and audit history are kept)")
+
     # ----- dashboard ------------------------------------------------------------------------------
     @app.get("/", response_class=HTMLResponse)
     def dashboard(request: Request, msg: str | None = None):
         with conn() as c:
-            rows = c.execute("SELECT * FROM projects WHERE NOT archived ORDER BY created_at DESC").fetchall()
+            rows = queue.active_projects(c)
         pilots = sorted(p.name for p in repo_root.glob("pilot-*") if PILOT_DIR.match(p.name) and (p / "project.json").exists())
         known = {Path(r["dir"]).name for r in rows}
         return page(request, "dashboard.html", projects=rows, msg=msg,
@@ -160,7 +188,7 @@ def create_app(*, dsn: str | None = None, projects_root: Path | None = None, rep
                 raise ValidationError("give the project a name")
         except PipelineError as exc:
             with conn() as c:
-                rows = c.execute("SELECT * FROM projects WHERE NOT archived ORDER BY created_at DESC").fetchall()
+                rows = queue.active_projects(c)
             return page(request, "dashboard.html", status=400, projects=rows, error=exc.message,
                         hint=exc.hint, form_name=name, registrable=[])
         pid = new_id("prj")

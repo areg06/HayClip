@@ -33,3 +33,4 @@ code { color: var(--muted); }
 .tag { display:inline-block; border:1px solid var(--line); border-radius:6px; padding:0 .4rem; font-size:.85rem; color:var(--muted); }
 .row { display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; }
 ul.plain { list-style:none; padding-left:0; }
+.tag.bad { color: var(--bad); border-color: var(--bad); } .tag.warn { color: var(--warn); border-color: var(--warn); } .tag.ok { color: var(--ok); border-color: var(--ok); }

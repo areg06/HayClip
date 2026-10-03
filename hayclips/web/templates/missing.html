@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Files missing · {{ project_row.name }}{% endblock %}
+{% block content %}
+<h1>{{ project_row.name }}</h1>
+<div class="banner bad" role="alert"><strong>The local project files are missing.</strong>
+The folder <code>{{ dir_name }}</code> (or its project.json) no longer exists, so nothing can be processed.
+HayClips will not recreate it.</div>
+<section class="card">
+  <h2>What you can do</h2>
+  <ol>
+    <li>If the folder was moved or deleted by mistake, put it back in the same place and reload this page.
+        Paid transcripts live inside it (<code>clips/&lt;id&gt;/transcription/</code>); restore it from backup rather than starting over.</li>
+    <li>If the project is really gone, remove its stale entry below. Its jobs and audit history stay in the database.</li>
+  </ol>
+</section>
+<section class="card">
+  <h2>Remove the stale entry</h2>
+  <form method="post" action="/p/{{ project_row.id }}/remove">
+    {% include "_csrf.html" %}
+    <label>Type the project name to confirm: <strong>{{ project_row.name }}</strong></label>
+    <input type="text" name="confirm_name" required maxlength="120" autocomplete="off">
+    <label>Your name</label><input type="text" name="removed_by" required maxlength="100">
+    <p><button class="danger" type="submit">Remove stale entry</button></p>
+  </form>
+</section>
+{% endblock %}
