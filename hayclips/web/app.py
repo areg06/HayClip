@@ -86,8 +86,8 @@ def create_app(*, dsn: str | None = None, projects_root: Path | None = None, rep
         if not PROJECT_ID.match(pid):
             raise NotFound()
         row = c.execute("SELECT * FROM projects WHERE id = %s", (pid,)).fetchone()
-        if not row:
-            raise NotFound()
+        if not row or not (Path(row["dir"]) / "project.json").is_file():
+            raise NotFound()      # unknown id, or the project folder was moved/deleted
         return row
 
     def repo_for(row) -> ProjectRepo:

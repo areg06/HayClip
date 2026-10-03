@@ -39,7 +39,7 @@ paid attempts, plan-only unless `--confirm-paid` and `HAYCLIPS_ALLOW_PAID_HARMAR
 `burn_captions.py` (alignment check, crop, captions A/B/C, review.html). Clips have stable ids;
 never rename/delete `clips/<id>/transcription/` or re-create recorded media. All external processes go
 through `hayclips/proc.py`. Run with `.venv/bin/python`; tests (`pytest`) are offline and cannot spend
-money. `docs/saas/` holds the SaaS plan; Phase 1b (local web app) needs founder approval.
+money. `docs/saas/` holds the SaaS plan. Phase 1b local web app: `scripts/dev-up.sh` (Postgres job queue + worker + FastAPI on 127.0.0.1); see `docs/saas/phase-1b-report.md`.
 `outreach-hy.md` is a draft. The heuristic cannot understand content deeply yet; human quality
 review is still the next product task.
 

@@ -65,6 +65,23 @@ Other operator commands (`.venv/bin/python -m hayclips ...`):
 - `reconcile P CLIP --show | --attach-job-id JOB --by NAME | --not-created --by NAME --evidence TEXT`
 - `migrate P`: convert an old `suggestions.json` pilot (already done for pilots 01–03).
 
+## Local web app (Phase 1b)
+
+```bash
+scripts/dev-up.sh            # socket-only Postgres + worker + web app on http://127.0.0.1:8765/
+```
+
+- One local operator, localhost only, no login. The app refuses to bind other addresses and rejects
+  other Host headers, cross-origin posts and posts without its CSRF token.
+- The browser only queues jobs. The worker runs them: captions, candidates, window downloads,
+  transcription (paid) and rendering. Job state lives in Postgres and survives restarts.
+- Paid transcription is shown as disabled unless the server runs with `HAYCLIPS_ALLOW_PAID_HARMAR=1`.
+  Even then it needs a consent record, the cost confirmation and your typed name, and every CLI
+  safeguard still applies.
+- New projects go to `HAYCLIPS_PROJECTS_ROOT` (default `projects/`, gitignored). Existing `pilot-*`
+  folders can be opened from the dashboard.
+- The CLI keeps working on the same project folders.
+
 ## Project layout and who owns what
 
 | Path | Owner | Contents |
