@@ -43,3 +43,6 @@ p.next { margin:.4rem 0 1rem; }
 a.button { display:inline-block; background:#2f6f4e; border:1px solid #3f8f65; color:var(--ink); border-radius:8px; padding:.45rem .9rem; text-decoration:none; }
 label.choice { display:inline-flex; gap:.35rem; align-items:center; font-size:1rem; color:var(--ink); background:#24364f; padding:.35rem .7rem; border-radius:8px; }
 details.score summary { cursor:pointer; color: var(--muted); }
+/* vertical clips play at phone size; landscape windows keep the full width */
+.grid figure video, .vertical video { max-width: 360px; aspect-ratio: 9 / 16; height: auto; max-height: 72vh; }
+.grid { grid-template-columns: repeat(auto-fill, minmax(260px, 360px)); }

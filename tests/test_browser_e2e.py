@@ -136,6 +136,14 @@ def wait_for_job(page, stack, pid, jtype, states=("SUCCEEDED",), timeout=90):
     raise AssertionError(f"{jtype} did not finish in {timeout}s")
 
 
+def shot(page, name: str) -> None:
+    """Optional screenshots for a human UX review: HAYCLIPS_E2E_SCREENSHOTS=<dir>."""
+    d = os.environ.get("HAYCLIPS_E2E_SCREENSHOTS")
+    if d:
+        Path(d).mkdir(parents=True, exist_ok=True)
+        page.screenshot(path=str(Path(d) / f"{name}.png"), full_page=True)
+
+
 def flash(page) -> str:
     return page.locator(".flash").inner_text() if page.locator(".flash").count() else ""
 
@@ -183,6 +191,8 @@ def test_operator_click_through(stack, browser, tmp_path):
     cards = page.locator("section.card")
     assert cards.count() >= 2
     expect(page.get_by_text("not a virality prediction")).to_be_visible()
+    page.locator("details.score").first.evaluate("el => el.open = true")
+    shot(page, "0-candidates")
     for k, title in ((0, "Առաջին հատված"), (1, "Երկրորդ հատված")):
         card = page.locator("section.card").nth(k)
         card.locator('input[name="title"]').fill(title)
@@ -194,6 +204,8 @@ def test_operator_click_through(stack, browser, tmp_path):
     expect(rows.nth(0)).to_contain_text("Առաջին հատված")
     rows.nth(1).get_by_role("button", name="move up").click()
     expect(page.locator("tbody tr").nth(0)).to_contain_text("Երկրորդ հատված")
+
+    shot(page, "1-project-after-selection")
 
     # 8. refresh and confirm the state persisted
     page.reload()
@@ -253,6 +265,7 @@ def test_operator_click_through(stack, browser, tmp_path):
     card = page.locator("section.card").first
     expect(card.locator("video").first).to_be_visible()
     expect(card).to_contain_text("machine output — not reviewed")
+    shot(page, "2-review-before-edits")
 
     # 16-19. edit title, valid hook, hook > 45 rejected, trim
     form = card.locator(f'form[action$="/edit"]')
@@ -287,9 +300,11 @@ def test_operator_click_through(stack, browser, tmp_path):
     dec.get_by_role("button", name="Save decision").click()
     expect(page.locator(".flash")).to_contain_text("review saved")
     expect(page.locator("section.card").first).to_contain_text("reviewed: would post")
+    shot(page, "3-review-after-decision")
     page.get_by_role("link", name="Summary", exact=True).click()
     expect(page.get_by_text("Would post: 1 of 1")).to_be_visible()
     expect(page.get_by_text("Needed a trim edit: 1")).to_be_visible()
+    shot(page, "4-summary")
 
     # 21. download MP4 and SRT through the visible buttons
     page.get_by_role("link", name="Review", exact=True).click()
