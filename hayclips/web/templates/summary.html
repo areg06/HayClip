@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Summary · {{ project.name }}{% endblock %}
+{% block content %}
+<h1>Operator summary</h1>
+<p class="muted">Built only from the review decisions saved on this machine (the latest decision per clip).
+It is not creator feedback and not a performance prediction.</p>
+{% if not stats.reviewed %}
+<p>No clips reviewed yet. Save a decision on the <a href="/p/{{ row.id }}/review">review page</a>.</p>
+{% else %}
+<section class="card">
+  <ul class="plain stats">
+    <li>Clips reviewed: {{ stats.reviewed }}</li>
+    <li>Would post: {{ stats.would_post }} of {{ stats.reviewed }}{% if stats.maybe %} (maybe: {{ stats.maybe }}){% endif %}</li>
+    <li>Median minutes to fix: {{ stats.median_minutes if stats.median_minutes is not none else '—' }}{% if stats.median_minutes is not none %}{% endif %}</li>
+    <li>Style choices: {% for st, n in stats.styles.items() %}{{ st }}: {{ n }}{% if not loop.last %}, {% endif %}{% else %}—{% endfor %}</li>
+    <li>Needed a trim edit: {{ stats.trim_edits }}</li>
+    <li>Needed a hook edit: {{ stats.hook_edits }}</li>
+    <li>Framing adjusted by hand: {{ stats.framing_edits }}</li>
+  </ul>
+</section>
+<section class="card">
+  <h2>Per clip (latest decision)</h2>
+  <table><thead><tr><th>Clip</th><th>Would post</th><th>Style</th><th>Minutes</th><th>Warnings</th><th>Edited</th><th>Decided</th></tr></thead><tbody>
+  {% for d in latest %}
+  <tr><td lang="hy">{{ titles.get(d.clip_id) or d.clip_id }}</td><td>{{ d.would_post }}</td><td>{{ d.style or '—' }}</td>
+      <td>{{ d.minutes_to_fix if d.minutes_to_fix is not none else '—' }}</td><td>{{ d.warning_count if d.warning_count is not none else '—' }}</td>
+      <td>{{ [('title' if d.title_edited else ''), ('hook' if d.hook_edited else ''), ('trim' if d.trim_edited else ''), ('framing' if d.framing_adjusted else '')] | select | join(', ') or '—' }}</td>
+      <td class="muted">{{ d.created_at.strftime('%Y-%m-%d %H:%M') }}</td></tr>
+  {% endfor %}
+  </tbody></table>
+</section>
+{% endif %}
+{% endblock %}

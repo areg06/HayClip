@@ -418,9 +418,13 @@ def create_app(*, dsn: str | None = None, projects_root: Path | None = None, rep
                 changes["trim"] = Trim(caption_start=float(m.group(1)), caption_end=float(m.group(2)))
         if len(changes.get("hook", "")) > 45:
             return back(dest, "hook must be 45 characters or fewer (it is not shortened automatically)")
-        repo.update_clip(cid, **changes)
+        current = repo.load().clip(cid)
+        changed = {k: v for k, v in changes.items() if getattr(current, k) != v}
+        if not changed:
+            return back(dest, "nothing changed")
+        repo.update_clip(cid, **changed)
         with conn() as c:
-            queue.log_event(c, pid, "clip_edited", {"fields": sorted(changes)}, clip_id=cid, actor="operator")
+            queue.log_event(c, pid, "clip_edited", {"fields": sorted(changed)}, clip_id=cid, actor="operator")
         return back(dest, "saved; re-render to see the change")
 
     # ----- consent and paid transcription -------------------------------------------------------
@@ -565,12 +569,58 @@ def create_app(*, dsn: str | None = None, projects_root: Path | None = None, rep
                     raise ValueError
             except ValueError:
                 return back(f"/p/{pid}/review", "minutes must be a whole number")
+            m = effort_metrics(c, row, cid)
             with c.transaction():
-                c.execute("""INSERT INTO review_decisions (project_id, clip_id, style, would_post, minutes_to_fix, notes, reviewer)
-                             VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+                c.execute("""INSERT INTO review_decisions (project_id, clip_id, style, would_post, minutes_to_fix, notes, reviewer,
+                                    final_title, final_hook, final_trim, warning_count, title_edited, hook_edited,
+                                    trim_edited, framing_adjusted, transcript_edited)
+                             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NULL)""",
                           (pid, cid, style, would, minutes, str(form.get("notes", ""))[:2000],
-                           str(form.get("reviewer", ""))[:100] or None))
+                           str(form.get("reviewer", ""))[:100] or None, m["final_title"], m["final_hook"],
+                           json.dumps(m["final_trim"]) if m["final_trim"] else None, m["warning_count"],
+                           m["title_edited"], m["hook_edited"], m["trim_edited"], m["framing_adjusted"]))
         return back(f"/p/{pid}/review", "review saved")
+
+    def effort_metrics(c, row, cid: str) -> dict:
+        """Facts about one clip at decision time, from real operator actions only."""
+        from ..media.reframe import framing_adjusted
+        repo = repo_for(row)
+        clip = repo.load().clip(cid)
+        info = jsonio.read_json(repo.render_dir(cid) / "render.json", default=None) or {}
+        edited = set()
+        for e in c.execute("SELECT detail FROM events WHERE project_id = %s AND clip_id = %s AND kind = 'clip_edited'",
+                           (row["id"], cid)).fetchall():
+            edited |= set(e["detail"].get("fields", []))
+        plan = jsonio.read_json(repo.clip_dir(cid) / "crop.json", default=None)
+        return {"final_title": clip.title, "final_hook": clip.hook,
+                "final_trim": ({"caption_start": clip.trim.caption_start, "caption_end": clip.trim.caption_end}
+                               if clip.trim else None),
+                "warning_count": len(info.get("checks", [])) if info else None,
+                "title_edited": "title" in edited, "hook_edited": "hook" in edited, "trim_edited": "trim" in edited,
+                "framing_adjusted": framing_adjusted(plan)}
+
+    @app.get("/p/{pid}/summary", response_class=HTMLResponse)
+    def summary_page(request: Request, pid: str):
+        import statistics
+        with conn() as c:
+            row = project_row(c, pid)
+            latest = c.execute("""SELECT DISTINCT ON (clip_id) * FROM review_decisions WHERE project_id = %s
+                                  ORDER BY clip_id, id DESC""", (pid,)).fetchall()
+        project = repo_for(row).load()
+        minutes = [d["minutes_to_fix"] for d in latest if d["minutes_to_fix"] is not None]
+        styles: dict[str, int] = {}
+        for d in latest:
+            if d["style"]:
+                styles[d["style"]] = styles.get(d["style"], 0) + 1
+        titles = {cl.id: cl.title for cl in project.clips}
+        stats = {"reviewed": len(latest), "would_post": sum(d["would_post"] == "yes" for d in latest),
+                 "maybe": sum(d["would_post"] == "maybe" for d in latest),
+                 "median_minutes": statistics.median(minutes) if minutes else None,
+                 "styles": dict(sorted(styles.items())),
+                 "trim_edits": sum(bool(d["trim_edited"]) for d in latest),
+                 "hook_edits": sum(bool(d["hook_edited"]) for d in latest),
+                 "framing_edits": sum(bool(d["framing_adjusted"]) for d in latest)}
+        return page(request, "summary.html", row=row, project=project, stats=stats, latest=latest, titles=titles)
 
     # ----- media ------------------------------------------------------------------------------------
     @app.get("/p/{pid}/media/{cid}/{name}")

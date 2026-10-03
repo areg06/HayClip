@@ -409,3 +409,49 @@ def test_remove_is_refused_while_files_exist(env):
     r = post(client, f"/p/{pid}/remove", {"confirm_name": "Here pod", "removed_by": "op"})
     assert "only projects whose files are missing" in r.headers["location"].replace("%20", " ")
     assert project_dir(dsn, pid).exists() and "Here pod" in client.get("/").text
+
+
+# ----- operator-effort metrics (Phase 1c) -------------------------------------------------------
+
+def test_edits_log_only_fields_that_actually_changed(env):
+    from hayclips import db
+    client, roots, dsn = env
+    pid = make_project(client)
+    repo, clip = with_rendered_clip(dsn, pid)
+    post(client, f"/p/{pid}/clips/{clip.id}/edit", {"title": clip.title, "hook": "Նոր կարճ hook", "pick_note": ""})
+    with db.connect(dsn) as c:
+        ev = c.execute("SELECT detail FROM events WHERE kind = 'clip_edited'").fetchall()
+    assert [e["detail"]["fields"] for e in ev] == [["hook"]]
+
+
+def test_review_decision_records_effort_metrics(env):
+    from hayclips import db
+    client, roots, dsn = env
+    pid = make_project(client)
+    repo, clip = with_rendered_clip(dsn, pid)
+    post(client, f"/p/{pid}/clips/{clip.id}/edit", {"title": "Վերջնական", "hook": "Ի՞նչ ես կարդում", "trim": "4.5:30"})
+    post(client, f"/p/{pid}/clips/{clip.id}/review",
+         {"would_post": "yes", "style": "A", "minutes_to_fix": "7", "notes": "", "reviewer": "op"})
+    with db.connect(dsn) as c:
+        d = c.execute("SELECT * FROM review_decisions").fetchone()
+    assert (d["would_post"], d["style"], d["minutes_to_fix"]) == ("yes", "A", 7)
+    assert d["final_title"] == "Վերջնական" and d["final_hook"] == "Ի՞նչ ես կարդում"
+    assert d["final_trim"] == {"caption_start": 4.5, "caption_end": 30.0}
+    assert d["warning_count"] == 1 and d["created_at"] is not None
+    assert d["title_edited"] and d["hook_edited"] and d["trim_edited"]
+    assert d["framing_adjusted"] is None or d["framing_adjusted"] is False     # no crop plan in this fixture
+    assert d["transcript_edited"] is None                                       # not supported yet: never guessed
+
+
+def test_project_summary_reports_would_post_rate_and_effort(env):
+    client, roots, dsn = env
+    pid = make_project(client)
+    repo, clip = with_rendered_clip(dsn, pid)
+    page = client.get(f"/p/{pid}/summary").text
+    assert "No clips reviewed yet" in page
+    post(client, f"/p/{pid}/clips/{clip.id}/edit", {"trim": "4.5:30"})
+    post(client, f"/p/{pid}/clips/{clip.id}/review", {"would_post": "no", "style": "A", "minutes_to_fix": "20"})
+    post(client, f"/p/{pid}/clips/{clip.id}/review", {"would_post": "yes", "style": "B", "minutes_to_fix": "6"})
+    page = client.get(f"/p/{pid}/summary").text
+    assert "Clips reviewed: 1" in page and "Would post: 1 of 1" in page    # latest decision per clip counts
+    assert "Median minutes to fix: 6" in page and "B: 1" in page and "Needed a trim edit: 1" in page
