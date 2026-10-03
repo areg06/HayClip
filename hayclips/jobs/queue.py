@@ -13,9 +13,12 @@ from __future__ import annotations
 
 import json
 import secrets
+from pathlib import Path
 from typing import Any
 
 import psycopg
+
+from ..errors import PipelineError
 
 ACTIVE = ("QUEUED", "RUNNING", "RETRY_WAIT")
 POOLS = ("io", "cpu", "paid")
@@ -31,6 +34,12 @@ def enqueue(conn: psycopg.Connection, *, project_id: str, type: str, payload: di
     if type not in TYPES:
         raise ValueError(f"unknown job type {type!r}")
     pool = TYPES[type]
+    row = project(conn, project_id)
+    if row is None or row.get("removed_at") is not None:
+        raise PipelineError(f"project {project_id} is not active", hint="it was removed or never registered")
+    if storage_state(row) == MISSING_STORAGE:
+        raise PipelineError("local project files are missing (MISSING_STORAGE); nothing can be processed",
+                            hint="restore the project folder, or remove the stale entry from the dashboard")
     if pool == "paid":
         max_attempts = 1
     with conn.transaction():
@@ -161,6 +170,52 @@ def for_project(conn: psycopg.Connection, project_id: str, limit: int = 50) -> l
 
 
 # ----- project index and audit log -----------------------------------------------------------------
+
+MISSING_STORAGE = "MISSING_STORAGE"
+
+
+def project(conn: psycopg.Connection, project_id: str) -> dict | None:
+    return conn.execute("SELECT * FROM projects WHERE id = %s", (project_id,)).fetchone()
+
+
+def storage_state(row: dict) -> str:
+    """OK, or MISSING_STORAGE when the project folder or its project.json is gone (never auto-repaired)."""
+    return "OK" if (Path(row["dir"]) / "project.json").is_file() else MISSING_STORAGE
+
+
+def active_projects(conn: psycopg.Connection) -> list[dict]:
+    rows = conn.execute("""SELECT * FROM projects WHERE NOT archived AND removed_at IS NULL
+                           ORDER BY created_at DESC""").fetchall()
+    for r in rows:
+        r["storage_state"] = storage_state(r)
+    return rows
+
+
+def remove_stale_project(conn: psycopg.Connection, project_id: str, *, confirm_name: str, actor: str) -> dict:
+    """Soft-remove a project whose files are missing. Requires the exact project name; audited.
+    Queued jobs are cancelled; rows, jobs and events are kept."""
+    row = project(conn, project_id)
+    if row is None or row["removed_at"] is not None:
+        raise PipelineError("no such active project")
+    if storage_state(row) != MISSING_STORAGE:
+        raise PipelineError("only projects whose files are missing can be removed here",
+                            hint="this project's folder still exists; nothing was changed")
+    if (confirm_name or "").strip() != row["name"]:
+        raise PipelineError("type the project name exactly to confirm removal")
+    if not (actor or "").strip():
+        raise PipelineError("say who is removing the entry")
+    with conn.transaction():
+        conn.execute("UPDATE projects SET removed_at = now(), removed_by = %s WHERE id = %s", (actor.strip(), project_id))
+        cancelled = conn.execute("""UPDATE jobs SET state = 'CANCELLED', cancel_requested = true, finished_at = now(),
+                                           error = 'project entry removed (files were missing)'
+                                    WHERE project_id = %s AND state IN ('QUEUED', 'RETRY_WAIT') RETURNING id""",
+                                 (project_id,)).fetchall()
+        conn.execute("INSERT INTO events (project_id, kind, detail, actor) VALUES (%s, %s, %s, %s)",
+                     (project_id, "stale_project_removed",
+                      json.dumps({"dir_name": Path(row["dir"]).name, "name": row["name"],
+                                  "cancelled_jobs": [c["id"] for c in cancelled]}), actor.strip()))
+    return project(conn, project_id)
+
 
 def register_project(conn: psycopg.Connection, *, project_id: str, name: str, dir: str,
                      source_url: str | None = None) -> dict:

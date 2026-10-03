@@ -18,6 +18,7 @@ import psycopg
 
 from .. import db
 from ..config import load_settings
+from ..errors import PipelineError
 from ..project import ProjectRepo
 from . import handlers as H
 from . import queue as q
@@ -94,6 +95,9 @@ class Worker:
         hb.start()
         try:
             project = conn.execute("SELECT * FROM projects WHERE id = %s", (job["project_id"],)).fetchone()
+            if q.storage_state(project) == q.MISSING_STORAGE:
+                raise PipelineError("local project files are missing (MISSING_STORAGE); the job was not run",
+                                    hint="restore the project folder, or remove the stale entry from the dashboard")
             ctx = H.Context(repo=ProjectRepo(Path(project["dir"])), settings=load_settings(),
                             progress=hb.set_progress, cancelled=lambda: hb.cancel or hb.lost)
             result = H.HANDLERS[jtype](job, ctx)

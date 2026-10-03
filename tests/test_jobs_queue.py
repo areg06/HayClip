@@ -7,8 +7,11 @@ from hayclips.jobs import queue as q
 
 
 @pytest.fixture
-def project(pg):
-    return q.register_project(pg, project_id="prj_test", name="t", dir="/tmp/hayclips-test-proj")
+def project(pg, tmp_path):
+    from hayclips.project import ProjectRepo
+    repo = ProjectRepo(tmp_path / "proj")
+    repo.init("t", {"kind": "youtube"})
+    return q.register_project(pg, project_id="prj_test", name="t", dir=str(repo.root))
 
 
 def test_migrations_are_idempotent(pg):
