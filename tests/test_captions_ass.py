@@ -59,3 +59,45 @@ def test_caption_bottom_is_a_parameter():
 def test_font_family_is_configurable():
     doc, _ = A.build_ass("C", W((0.0, 1.0, "բառ")), 2.0, family="Test Sans")
     assert "Style: C,Test Sans SemiBold," in doc and "Style: Hook,Test Sans Black," in doc
+
+
+# ----- Phase 1d looks ----------------------------------------------------------------------------
+
+def _words():
+    return [(0.1, 0.5, "Երևան", True), (0.5, 0.9, "և", False), (0.9, 1.4, "Գյումրի։", False)]
+
+
+def test_no_look_is_the_legacy_document():
+    from hayclips.captions.ass import build_ass
+    assert build_ass("A", _words(), 2.0)[0] == build_ass("A", _words(), 2.0, look=None, hook_look=None)[0]
+
+
+def test_look_sets_position_size_colours_and_keeps_armenian():
+    from hayclips.captions.ass import build_ass
+    from hayclips.look import normalise_look
+    look = normalise_look({"preset": "active", "x": 0.4, "y": 0.6, "size": 1.25, "color": "#FFEE00", "highlight": "#00FF00"})
+    doc, ev = build_ass("A", _words(), 2.0, look=look)
+    style = [l for l in doc.splitlines() if l.startswith("Style: A,")][0].split(",")
+    assert style[2] == str(round(58 * 1.25)) and style[3] == "&H0000EEFF"
+    assert all("\\an2\\pos(288,768)" in e[3] for e in ev)
+    assert "\\c&H00FF00&" in doc and "և" in doc and "ԵՒ" not in doc
+
+
+def test_clean_preset_and_background_and_words_per_line():
+    from hayclips.captions.ass import build_ass
+    from hayclips.look import normalise_look
+    look = normalise_look({"preset": "clean", "background": True, "words_per_line": 1})
+    doc, ev = build_ass("L", _words(), 2.0, look=look)
+    assert len(ev) == 3 and not any("\\c&" in e[3] for e in ev)          # one word per screen, no highlight
+    style = [l for l in doc.splitlines() if l.startswith("Style: L,")][0].split(",")
+    assert style[15] == "3"                                                # boxed background
+
+
+def test_hook_look_hides_or_moves_the_hook():
+    from hayclips.captions.ass import build_ass
+    from hayclips.look import normalise_hook
+    hidden, _ = build_ass("A", _words(), 4.0, hook="Ի՞նչ ես կարծում", hook_look=normalise_hook({"show": False}))
+    assert "Hook,," not in hidden.split("[Events]")[1]
+    moved, ev = build_ass("A", _words(), 6.0, hook="Ի՞նչ ես կարծում", hook_look=normalise_hook({"y": 0.3, "duration": 5}))
+    hook = [e for e in ev if e[2] == "Hook"][0]
+    assert hook[1] == 5.0 and "\\an8\\pos(360,384)" in hook[3]
