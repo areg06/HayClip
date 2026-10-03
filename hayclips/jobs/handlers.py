@@ -185,6 +185,16 @@ def render(job: dict, ctx: Context) -> dict:
         err = PipelineError("; ".join(f"{r.clip_id}: {r.message}" for r in failed))
         err.job_result = {"clips": out}
         raise err
+    rendered = [r for r in results if r.status == "rendered"]
+    if not results:
+        raise PipelineError("nothing was rendered: no selected clips", hint="select clips first")
+    if not rendered:
+        err = PipelineError("nothing was rendered: " + "; ".join(f"{r.clip_id}: {r.message}" for r in results),
+                            hint="clips need a downloaded window and a transcript (steps 4 and 5) before rendering")
+        err.job_result = {"clips": out}
+        raise err
+    skipped = len(results) - len(rendered)
+    ctx.progress(1.0, f"rendered {len(rendered)} clip(s)" + (f", skipped {skipped} (see result)" if skipped else ""))
     return {"clips": out}
 
 

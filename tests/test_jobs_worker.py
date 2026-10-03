@@ -204,7 +204,7 @@ def test_worker_refuses_to_start_without_database(tmp_path):
 
 
 def test_sigterm_finishes_current_job_then_exits(pg, pg_dsn, pid):
-    job = q.enqueue(pg, project_id=pid, type="render", payload={"styles": ["A"]})   # empty project: sleeps, then succeeds
+    job = q.enqueue(pg, project_id=pid, type="render", payload={"styles": ["A"]})   # empty project: sleeps, then ends
     p = _spawn_worker(pg_dsn, "cpu", {H.TEST_SLEEP_ENV: "2"})
     try:
         _wait_state(pg, job["id"], {"RUNNING"})
@@ -214,4 +214,5 @@ def test_sigterm_finishes_current_job_then_exits(pg, pg_dsn, pid):
     finally:
         p.kill()
     assert p.returncode == 0 and "worker stopped" in out
-    assert q.get(pg, job["id"])["state"] == "SUCCEEDED"       # the running job was finished, not abandoned
+    done = q.get(pg, job["id"])                               # the running job was finished, not abandoned:
+    assert done["state"] == "FAILED" and "no selected clips" in done["error"] and done["attempts"] == 1

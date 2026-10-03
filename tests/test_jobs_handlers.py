@@ -148,3 +148,18 @@ def test_invalid_payload_fails_cleanly(pg, pg_dsn, tmp_path):
     run_worker(["cpu"], dsn=pg_dsn, once=True)
     job = q.get(pg, job["id"])
     assert job["state"] == "FAILED" and "styles" in job["error"]
+
+
+def test_render_with_nothing_transcribed_fails_with_reason(pg, pg_dsn, tmp_path):
+    """Found in operator testing 2026-10-03: the job said SUCCEEDED although no clip could be rendered."""
+    from hayclips.models import Candidate, candidate_id
+    repo = ProjectRepo(tmp_path / "proj")
+    repo.init("proj", {"kind": "youtube", "url": f"https://youtu.be/{VID}"})
+    repo.save_candidates([Candidate(id=candidate_id(10, 40), start=10, end=40, score=1, text="x")], {})
+    clip = repo.select(candidate_id(10, 40))
+    pid = register(pg, repo)
+    job = run_job(pg, pg_dsn, pid, "render", {"styles": ["A"]})
+    assert job["state"] == "FAILED"
+    assert "nothing was rendered" in job["error"] and "not fetched yet" in job["error"]
+    assert "transcript" in job["error"]          # the hint names the missing steps
+    assert job["result"]["clips"][0]["clip_id"] == clip.id
