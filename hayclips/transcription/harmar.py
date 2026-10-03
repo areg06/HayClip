@@ -65,11 +65,11 @@ class HarmarClient:
         if u.hostname == REAL_HOST:
             if u.scheme != "https":
                 raise PaidOperationBlocked("the real Harmar API must be reached over https")
-            if os.environ.get("HAYCLIPS_FORBID_REAL_HARMAR"):
-                raise PaidOperationBlocked("real Harmar calls are forbidden in this process (test environment)")
             if not settings.allow_paid_harmar:
                 raise PaidOperationBlocked("real Harmar calls are disabled",
                                            hint="set HAYCLIPS_ALLOW_PAID_HARMAR=1 only for a founder-authorised paid run")
+            if os.environ.get("HAYCLIPS_FORBID_REAL_HARMAR"):
+                raise PaidOperationBlocked("real Harmar calls are forbidden in this process (test environment)")
         elif not _is_loopback(u.hostname):
             raise PaidOperationBlocked(f"refusing unknown provider host {u.hostname!r}",
                                        hint="only api.harmar.ai (with opt-in) or a local fake server are allowed")
