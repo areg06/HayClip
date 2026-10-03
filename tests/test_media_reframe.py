@@ -85,3 +85,28 @@ def test_framing_adjusted_detects_hand_edits_only():
     assert framing_adjusted(plan) is False
     plan["shots"][1]["x"] = 904
     assert framing_adjusted(plan) is True
+
+
+def test_crop_adjust_and_reset(tmp_path):
+    from hayclips import jsonio
+    from hayclips.errors import ValidationError
+    from hayclips.media.reframe import framing_adjusted, reset_crop, set_crop_x, shots_digest
+    plan = {"width": 1920, "height": 1080, "crop_w": 608, "mode": "crop", "source_sha256": "x",
+            "shots": [{"start": 0.0, "x": 600, "face_hits": 3, "max_faces": 1, "drift": 0.1}]}
+    plan["auto_shots_sha256"] = shots_digest(plan)
+    plan["auto_shots"] = [dict(plan["shots"][0])]
+    path = tmp_path / "crop.json"
+    jsonio.write_json(path, plan)
+    assert set_crop_x(path, {0: 701})["shots"][0]["x"] in (700, 702)          # kept even
+    assert framing_adjusted(jsonio.read_json(path)) is True
+    with pytest.raises(ValidationError):
+        set_crop_x(path, {0: 5000})
+    assert reset_crop(path)["shots"][0]["x"] == 600 and framing_adjusted(jsonio.read_json(path)) is False
+
+
+def test_safe_zone_overlap_and_safe_bottom():
+    from hayclips.platforms import SAFE_ZONES, overlaps, safe_bottom
+    assert set(SAFE_ZONES) == {"tiktok", "reels", "shorts"}
+    assert overlaps((0.3, 0.70, 0.7, 0.76), "tiktok") == ["caption and sound"]
+    assert overlaps((0.3, 0.60, 0.7, 0.66), "shorts") == []
+    assert safe_bottom("shorts") == 0.735 and safe_bottom("reels") > safe_bottom("tiktok")

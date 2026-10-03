@@ -129,6 +129,31 @@ def shots_digest(plan: dict) -> str:
     return hashlib.sha256(json.dumps(shots).encode()).hexdigest()
 
 
+def set_crop_x(plan_path: Path, xs: dict[int, int]) -> dict:
+    """Operator moves the crop horizontally for some shots. Values are validated before saving."""
+    plan = jsonio.read_json(plan_path)
+    w, cw = int(plan["width"]), int(plan["crop_w"])
+    for idx, x in xs.items():
+        if not 0 <= idx < len(plan["shots"]):
+            raise ValidationError("that camera shot does not exist")
+        x = int(round(float(x) / 2)) * 2
+        if not 0 <= x <= w - cw:
+            raise ValidationError(f"crop position must be within 0..{w - cw}")
+        plan["shots"][idx]["x"] = x
+    validate_plan(plan)
+    jsonio.write_json(plan_path, plan)
+    return plan
+
+
+def reset_crop(plan_path: Path) -> dict:
+    plan = jsonio.read_json(plan_path)
+    if plan.get("auto_shots"):
+        plan["shots"] = [dict(sh) for sh in plan["auto_shots"]]
+        validate_plan(plan)
+        jsonio.write_json(plan_path, plan)
+    return plan
+
+
 def framing_adjusted(plan: dict | None) -> bool | None:
     """True if someone edited the crop plan after it was computed; None if unknown (no plan/no baseline)."""
     if not plan or not plan.get("auto_shots_sha256"):
@@ -144,13 +169,16 @@ def load_or_plan(plan_path: Path, video: Path, video_sha256: str) -> tuple[dict,
             # legacy plans (pilot-03) predate the hash field; adopt them for the bytes they were made from
             plan = {**plan, "source_sha256": video_sha256, "mode": plan.get("mode", "crop")}
             jsonio.write_json(plan_path, plan)
-        if "auto_shots_sha256" not in plan:
-            # baseline for "framing manually adjusted": plans written before Phase 1c count as automatic
-            plan = {**plan, "auto_shots_sha256": shots_digest(plan)}
+        if "auto_shots_sha256" not in plan or "auto_shots" not in plan:
+            # baseline for "framing manually adjusted" and "reset to automatic": plans written before
+            # Phase 1d count as automatic
+            plan = {**plan, "auto_shots_sha256": plan.get("auto_shots_sha256") or shots_digest(plan),
+                    "auto_shots": [dict(sh) for sh in plan["shots"]]}
             jsonio.write_json(plan_path, plan)
         return validate_plan(plan), False
     plan = plan_crop(video)
     plan["auto_shots_sha256"] = shots_digest(plan)
+    plan["auto_shots"] = [dict(sh) for sh in plan["shots"]]
     jsonio.write_json(plan_path, plan)
     return validate_plan(plan), True
 
