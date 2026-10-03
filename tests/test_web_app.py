@@ -491,3 +491,92 @@ def test_social_connect_is_a_non_functional_shell(env):
     assert "Social publishing is not available in this version." in r.text
     with db.connect(dsn) as c:
         assert c.execute("SELECT count(*) AS n FROM events").fetchone()["n"] == 0     # nothing happened
+
+
+# ----- Phase 1d: choose clips, trim before transcription, add captions --------------------------
+
+def choose(client, pid, cand_ids, trims=None, next_="save", token=None):
+    data = {"csrf": token or csrf(client), "next": next_, "choose": list(cand_ids)}
+    for k, v in (trims or {}).items():
+        data[f"trim_{k}"] = v
+    return client.post(f"/p/{pid}/choose", data=data, headers=ORIGIN, follow_redirects=False)
+
+
+def test_batch_choose_only_some_candidates(env):
+    client, roots, dsn = env
+    pid = make_project(client)
+    repo, cands = with_candidates(dsn, pid)
+    r = choose(client, pid, [cands[0].id, cands[2].id], next_="captions")
+    assert r.headers["location"] == f"/p/{pid}/captions"
+    chosen = repo.load().ordered()
+    assert [c.candidate_id for c in chosen] == [cands[0].id, cands[2].id]
+    assert all(c.look and c.look["preset"] == "active" for c in chosen)          # brand defaults applied
+    choose(client, pid, [cands[2].id])
+    assert [c.candidate_id for c in repo.load().ordered()] == [cands[2].id]
+    assert len(repo.load().clips) == 2                                           # unchosen kept, unselected
+    page = client.get(f"/p/{pid}/captions").text
+    assert "1 clip selected · 50s" in page and "1m 00s will be transcribed" in page
+
+
+def test_trim_before_transcription_updates_the_window(env):
+    client, roots, dsn = env
+    pid = make_project(client)
+    repo, cands = with_candidates(dsn, pid)
+    choose(client, pid, [cands[0].id], trims={cands[0].id: "102.5:131.0"})
+    clip = repo.load().ordered()[0]
+    assert (clip.start, clip.end) == (102.5, 131.0)
+    r = choose(client, pid, [cands[0].id], trims={cands[0].id: "100:101"})
+    assert "5 s to 3 min" in r.headers["location"].replace("%20", " ")
+    assert repo.load().ordered()[0].end == 131.0
+
+
+def test_trim_after_transcription_is_refused(env):
+    client, roots, dsn = env
+    pid = make_project(client)
+    repo, clip = with_rendered_clip(dsn, pid)
+    r = choose(client, pid, [clip.candidate_id], trims={clip.candidate_id: "101:139"})
+    assert "already has a transcript" in r.headers["location"].replace("%20", " ")
+    assert repo.load().clip(clip.id).end == 140
+
+
+def test_add_captions_refused_when_paid_is_off(env):
+    client, roots, dsn = env
+    pid = make_project(client)
+    repo, cands = with_candidates(dsn, pid)
+    choose(client, pid, [cands[1].id])
+    page = client.get(f"/p/{pid}/captions").text
+    assert "Paid transcription is disabled in this environment" in page and 'name="confirmed_by"' not in page
+    r = post(client, f"/p/{pid}/captions", {"confirmed_by": "x", "i_understand": "yes"})
+    assert "disabled" in r.headers["location"]
+    assert jobs(dsn, pid) == []
+
+
+def test_add_captions_chain_covers_only_chosen_clips(env, monkeypatch):
+    client, roots, dsn = env
+    monkeypatch.setenv("HAYCLIPS_ALLOW_PAID_HARMAR", "1")
+    pid = make_project(client)
+    repo, cands = with_candidates(dsn, pid)
+    choose(client, pid, [cands[0].id, cands[2].id])
+    post(client, f"/p/{pid}/consent", {"granted_by": "c", "statement": "ok", "recorded_by": "op", "confirm": "yes", "back": "captions"})
+    r = post(client, f"/p/{pid}/captions", {"confirmed_by": "Founder", "i_understand": "yes"})
+    assert r.status_code == 303
+    (j,) = jobs(dsn, pid)
+    ids = [c.id for c in repo.load().ordered()]
+    assert j["type"] == "fetch_windows" and j["payload"] == {"clip_ids": ids, "then": ["transcribe", "render"],
+                                                            "confirmed_by": "Founder"}
+    post(client, f"/p/{pid}/captions", {"confirmed_by": "Founder", "i_understand": "yes"})
+    assert len(jobs(dsn, pid)) == 1                                              # idempotent
+
+
+def test_preview_and_find_more_are_free_jobs(env):
+    client, roots, dsn = env
+    pid = make_project(client)
+    repo, cands = with_candidates(dsn, pid)
+    (repo.root / "source").mkdir(exist_ok=True)
+    (repo.root / "source" / "src.hy-orig.srt").write_text("1\n00:00:00,000 --> 00:00:01,000\nԲարև։\n", encoding="utf-8")
+    post(client, f"/p/{pid}/candidates/{cands[0].id}/preview")
+    post(client, f"/p/{pid}/jobs/find_more")
+    types = sorted(j["type"] for j in jobs(dsn, pid))
+    assert types == ["generate_candidates", "preview_candidate"]
+    assert client.get(f"/p/{pid}/previews/{cands[0].id}/preview.mp4").status_code == 404
+    assert client.get(f"/p/{pid}/previews/..%2F..%2Fproject.json/preview.mp4").status_code == 404

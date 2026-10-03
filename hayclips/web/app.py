@@ -439,23 +439,193 @@ def create_app(*, dsn: str | None = None, projects_root: Path | None = None, rep
         dest = f"/p/{pid}/review" if form.get("from") == "review" else f"/p/{pid}"
         return back(dest, "render queued")
 
-    # ----- candidates and clip selection ---------------------------------------------------------
+    # ----- choose clips (preview, trim, batch selection) ------------------------------------------
+    def preview_info(repo: ProjectRepo, cand_id: str) -> dict | None:
+        d = repo.root / "previews" / cand_id
+        meta = jsonio.read_json(d / "preview.json", default=None)
+        return meta if meta and (d / "preview.mp4").is_file() else None
+
     @app.get("/p/{pid}/candidates", response_class=HTMLResponse)
     def candidates_page(request: Request, pid: str, msg: str | None = None):
+        from .product import fmt_duration
         with conn() as c:
             row = project_row(c, pid)
+            jobs = queue.for_project(c, pid, 30)
         repo = repo_for(row)
         project = repo.load()
         taken = {c.candidate_id: c for c in project.clips}
-        vid = project.source.get("video_id") or ""
-        try:
-            vid = parse_youtube_ref(vid or project.source.get("url", ""))
-        except PipelineError:
-            vid = ""
-        cands = [{"c": x, "explain": explain(x), "parts": explain_parts(x), "clip": taken.get(x.id),
-                  "watch": f"https://www.youtube.com/watch?v={vid}&t={int(x.start)}s" if vid else None}
-                 for x in repo.load_candidates()]
-        return page(request, "candidates.html", row=row, project=project, cands=cands, msg=msg)
+        busy_previews = {j["payload"].get("candidate_id") for j in jobs
+                         if j["type"] == "preview_candidate" and j["state"] in ("QUEUED", "RUNNING", "RETRY_WAIT")}
+        finding = any(j["type"] in ("import_captions", "discover_transcript", "generate_candidates")
+                      and j["state"] in ("QUEUED", "RUNNING", "RETRY_WAIT") for j in jobs)
+        cands = []
+        for k, x in enumerate(repo.load_candidates(), 1):
+            clip = taken.get(x.id)
+            start, end = (clip.start, clip.end) if clip else (x.start, x.end)
+            cands.append({"n": k, "c": x, "parts": explain_parts(x), "clip": clip,
+                          "chosen": bool(clip and clip.selected), "start": start, "end": end,
+                          "locked": bool(clip and transcribed(repo, [clip.id])),
+                          "preview": preview_info(repo, x.id), "previewing": x.id in busy_previews})
+        chosen = [x for x in cands if x["chosen"]]
+        return page(request, "candidates.html", row=row, project=project, cands=cands, msg=msg, finding=finding,
+                    n_chosen=len(chosen), chosen_duration=fmt_duration(sum(x["end"] - x["start"] for x in chosen)),
+                    busy=finding or bool(busy_previews))
+
+    @app.post("/p/{pid}/candidates/{cand}/preview")
+    def candidate_preview(pid: str, cand: str):
+        if not re.fullmatch(r"cand_[0-9a-f]{10}", cand):
+            raise NotFound()
+        with conn() as c:
+            row = project_row(c, pid)
+            enqueue(c, row, "preview_candidate", {"candidate_id": cand}, f"{pid}:preview:{cand}")
+        return back(f"/p/{pid}/candidates", "making a quick preview")
+
+    @app.get("/p/{pid}/previews/{cand}/preview.mp4")
+    def candidate_preview_file(pid: str, cand: str):
+        if not re.fullmatch(r"cand_[0-9a-f]{10}", cand):
+            raise NotFound()
+        with conn() as c:
+            row = project_row(c, pid)
+        root = repo_for(row).root.resolve()
+        path = (root / "previews" / cand / "preview.mp4").resolve()
+        if not path.is_file() or not path.is_relative_to(root):
+            raise NotFound()
+        return FileResponse(path, media_type="video/mp4", headers={"Cache-Control": "private, max-age=0"})
+
+    @app.post("/p/{pid}/jobs/find_more")
+    def find_more(pid: str):
+        with conn() as c:
+            row = project_row(c, pid)
+            repo = repo_for(row)
+            if not has_captions(repo):
+                return back(f"/p/{pid}/candidates", "moments are still being found")
+            n = len(repo.load_candidates())
+            params = jsonio.read_json(repo.candidates_path, default={}).get("params", {})
+            payload = {k: params[k] for k in ("min_seconds", "max_seconds", "skip_start", "skip_end") if k in params}
+            enqueue(c, row, "generate_candidates", {**payload, "count": 3, "more": True}, f"{pid}:more:{n}")
+        return back(f"/p/{pid}/candidates", "looking for more moments")
+
+    @app.post("/p/{pid}/choose")
+    async def choose(request: Request, pid: str):
+        """Batch selection (and pre-transcription trims) from the Choose clips page. Free: nothing is
+        downloaded, transcribed or rendered here."""
+        from ..brandkit import get_brand
+        from ..fetch import supersede_window
+        form = await request.form()
+        with conn() as c:
+            row = project_row(c, pid)
+            brand = get_brand(c)
+        repo = repo_for(row)
+        project = repo.load()
+        duration = float(project.source.get("duration") or 0)
+        picked = set(form.getlist("choose"))
+        by_cand = {cl.candidate_id: cl for cl in project.clips}
+        problems = []
+        for cand in repo.load_candidates():
+            clip = by_cand.get(cand.id)
+            if cand.id in picked:
+                if clip is None:
+                    clip = repo.select(cand.id, title="", pad=5.0)
+                    repo.update_clip(clip.id, look=brand["look"], hook_look=brand["hook"])
+                if not clip.selected:
+                    repo.update_clip(clip.id, selected=True)
+                raw = str(form.get(f"trim_{cand.id}", "")).strip()
+                if raw:
+                    m = re.fullmatch(r"(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)", raw)
+                    if not m:
+                        problems.append("a trim was not understood")
+                        continue
+                    a, b = round(float(m.group(1)), 2), round(float(m.group(2)), 2)
+                    if (a, b) != (round(clip.start, 2), round(clip.end, 2)):
+                        if not (0 <= a < b and 5 <= b - a <= 180 and (not duration or b <= duration + 0.5)):
+                            problems.append("a clip must be 5 s to 3 min long and inside the video")
+                            continue
+                        try:
+                            supersede_window(repo, clip.id, f"trimmed before transcription to {a}-{b}")
+                        except PipelineError as exc:
+                            problems.append(exc.message)
+                            continue
+                        repo.update_clip(clip.id, start=a, end=b)
+            elif clip is not None and clip.selected:
+                repo.update_clip(clip.id, selected=False)
+        with conn() as c:
+            queue.log_event(c, pid, "clips_chosen", {"candidates": sorted(picked)}, actor="operator")
+        if problems:
+            return back(f"/p/{pid}/candidates", "; ".join(dict.fromkeys(problems)))
+        if form.get("next") == "captions" and picked:
+            return back(f"/p/{pid}/captions")
+        return back(f"/p/{pid}/candidates", "saved")
+
+    # ----- add captions (cost preview + confirmation) --------------------------------------------
+    def captions_view(repo: ProjectRepo, settings: Settings) -> dict:
+        from .product import fmt_duration
+        project = repo.load()
+        chosen = project.ordered()
+        rows, need, total = [], 0.0, 0.0
+        done_ids = transcribed(repo, [c.id for c in chosen])
+        for c in chosen:
+            secs = c.end - c.start
+            total += secs
+            billed = 0.0 if c.id in done_ids else secs + 2 * c.pad
+            need += billed
+            rows.append({"clip": c, "seconds": secs, "has_transcript": c.id in done_ids, "billed": billed})
+        attempts = [a for cl in project.clips for a in list_attempts(repo, cl.id)]
+        budget_error = None
+        if need:
+            try:
+                budget.check_budgets(settings, new_seconds=int(-(-need // 1)), project_attempts=attempts)
+            except PipelineError as exc:
+                budget_error = exc.message
+        return {"project": project, "rows": rows, "n": len(chosen), "total": fmt_duration(total),
+                "need_seconds": need, "need": fmt_duration(need), "consent": project.active_consent("harmar"),
+                "key_present": bool(os.environ.get("HARMAR_API_KEY")), "budget_error": budget_error,
+                "unknowns": budget.unreconciled_unknowns(settings)}
+
+    @app.get("/p/{pid}/captions", response_class=HTMLResponse)
+    def captions_page(request: Request, pid: str, msg: str | None = None):
+        with conn() as c:
+            row = project_row(c, pid)
+        return page(request, "captions.html", row=row, msg=msg, **captions_view(repo_for(row), load_settings()))
+
+    @app.post("/p/{pid}/captions")
+    async def captions_confirm(request: Request, pid: str):
+        form = await request.form()
+        with conn() as c:
+            row = project_row(c, pid)
+        repo = repo_for(row)
+        settings = load_settings()
+        v = captions_view(repo, settings)
+        who = str(form.get("confirmed_by", "")).strip()[:100]
+        ids = [r["clip"].id for r in v["rows"]]
+        needs_paid = v["need_seconds"] > 0
+        refusal = None
+        if not ids:
+            refusal = "choose clips first"
+        elif needs_paid and not settings.allow_paid_harmar:
+            refusal = "Paid transcription is disabled in this environment"
+        elif needs_paid and v["consent"] is None:
+            refusal = "record the creator's consent first"
+        elif needs_paid and v["unknowns"]:
+            refusal = "a previous submission needs reconciliation first"
+        elif needs_paid and v["budget_error"]:
+            refusal = v["budget_error"]
+        elif needs_paid and not v["key_present"]:
+            refusal = "no Harmar key in the server environment"
+        elif needs_paid and (not who or form.get("i_understand") != "yes"):
+            refusal = "type your name and tick the box to confirm"
+        if refusal:
+            return back(f"/p/{pid}/captions", refusal)
+        project = repo.load()
+        rev = edit_revision(project)
+        payload = {"clip_ids": ids, "then": ["transcribe", "render"] if needs_paid else ["render"]}
+        if needs_paid:
+            payload["confirmed_by"] = who
+        with conn() as c:
+            job = enqueue(c, row, "fetch_windows", payload, f"{pid}:captions:{','.join(ids)}:{rev}", actor=who or "operator")
+            if needs_paid:
+                queue.log_event(c, pid, "paid_confirmed", {"job_id": job["id"], "clip_ids": ids,
+                                                             "estimated_seconds": int(v["need_seconds"])}, actor=who)
+        return back(f"/p/{pid}", "adding captions to the chosen clips")
 
     @app.post("/p/{pid}/select")
     async def select(request: Request, pid: str):
@@ -556,7 +726,7 @@ def create_app(*, dsn: str | None = None, projects_root: Path | None = None, rep
                                 source_ref=repo.load().source.get("video_id", ""))
             repo.add_consent(rec)
             queue.log_event(c, pid, "consent_recorded", {"consent_id": rec.id, "provider": "harmar"}, actor=recorded_by)
-        return back(f"/p/{pid}/transcribe", "consent recorded")
+        return back(f"/p/{pid}/captions" if form.get("back") == "captions" else f"/p/{pid}/transcribe", "consent recorded")
 
     def transcription_view(repo: ProjectRepo, settings: Settings):
         from ..transcription import service

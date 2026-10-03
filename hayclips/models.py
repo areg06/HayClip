@@ -82,6 +82,8 @@ class Clip:
     selected: bool = True
     trim: Trim | None = None
     legacy_name: str | None = None   # e.g. "clip_02" for migrated pilots (display/audit only)
+    look: dict | None = None         # caption look from the editor/brand kit; None = original defaults
+    hook_look: dict | None = None    # hook show/position/duration; None = original defaults
 
     def to_dict(self) -> dict:
         return asdict(self)

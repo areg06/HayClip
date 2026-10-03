@@ -1,32 +1,77 @@
 {% extends "base.html" %}
-{% block title %}Candidates · {{ project.name }}{% endblock %}
+{% block title %}Choose clips · {{ project.name }}{% endblock %}
 {% block content %}
-<h1>Candidates</h1>
-<div class="banner">Scores are a ranking heuristic built from free auto-captions, not a virality prediction.
-Read each window and pick the 2–3 that make sense on their own.</div>
-{% if not cands %}<p class="muted">No candidates yet. Fetch captions and generate candidates on the <a href="/p/{{ row.id }}">project page</a>.</p>{% endif %}
-{% for x in cands %}{% set c = x.c %}
-<section class="card">
-  <h2>{{ c.start | hms }}–{{ c.end | hms }} · {{ (c.end - c.start) | round | int }} s · score {{ c.score }}</h2>
-  {% if x.watch %}<p><a href="{{ x.watch }}" target="_blank" rel="noopener noreferrer">Watch this moment on YouTube ↗</a></p>{% endif %}
-  {% if x.parts %}
-  <details class="score"><summary>Why this score</summary>
-    <ul class="plain">{% for label, pts in x.parts %}<li><span class="{{ 'ok' if pts > 0 else 'bad' }}">{{ '%+.2f' | format(pts) }}</span> {{ label }}</li>{% endfor %}</ul>
-  </details>
-  {% else %}<p class="meta">{{ x.explain }}</p>{% endif %}
-  <p lang="hy">{{ c.text[:420] }}{% if c.text | length > 420 %}…{% endif %}</p>
-  {% if x.clip %}
-    <p>{% if x.clip.selected %}<span class="tag ok">selected</span>{% else %}<span class="tag">unselected</span>{% endif %} as clip #{{ x.clip.order }} <span class="muted">({{ x.clip.id }})</span></p>
-  {% else %}
-  <form method="post" action="/p/{{ row.id }}/select">
-    {% include "_csrf.html" %}
-    <input type="hidden" name="candidate_id" value="{{ c.id }}">
-    <label>Title</label><input type="text" name="title" maxlength="200" lang="hy">
-    <label>Hook (optional, ≤45 characters, must quote the speaker faithfully)</label><input type="text" name="hook" maxlength="45" lang="hy">
-    <label>Why this window</label><input type="text" name="pick_note" maxlength="500">
-    <p><button class="primary" type="submit">Select this window</button></p>
-  </form>
-  {% endif %}
-</section>
-{% endfor %}
+<div class="page-head">
+  <div class="grow">
+    <h1>Choose clips</h1>
+    <p class="muted">{{ cands | length }} moment{{ '' if cands | length == 1 else 's' }} found. Preview, trim and choose the ones worth finishing.
+      <span title="Suggestions are ranked from the transcript (sentence endings, questions, laughter, pace). They are not a prediction of how a clip will perform.">ⓘ</span></p>
+  </div>
+  {% if cands %}<form method="post" action="/p/{{ row.id }}/jobs/find_more" class="inline">{% include "_csrf.html" %}<button type="submit" class="ghost">Find more</button></form>{% endif %}
+</div>
+{% if busy %}<span data-refresh-while-busy hidden></span>{% endif %}
+{% if finding %}<div class="notice calm">Finding moments… this page updates by itself.</div>{% endif %}
+{% if not cands and not finding %}
+<div class="surface" style="text-align:center;padding:56px 24px">
+  <h2>No moments yet</h2>
+  <p class="muted">Go back to the project and start “Find clips”.</p>
+  <a class="btn" href="/p/{{ row.id }}">Back to project</a>
+</div>
+{% endif %}
+{% if cands %}
+<form method="post" action="/p/{{ row.id }}/choose" id="choose-form">
+  {% include "_csrf.html" %}
+  <div class="cands">
+  {% for x in cands %}{% set c = x.c %}
+  <article class="cand{{ ' on' if x.chosen }}" data-cand="{{ c.id }}" data-start="{{ x.start }}" data-end="{{ x.end }}"
+           data-suggested-start="{{ c.start }}" data-suggested-end="{{ c.end }}">
+    <div><input type="checkbox" name="choose" value="{{ c.id }}" {{ 'checked' if x.chosen }} aria-label="Choose clip {{ x.n }}"></div>
+    <div>
+      <div class="row between">
+        <div><span class="when">Clip {{ x.n }}</span>
+          <span class="muted" data-range>{{ x.start | hms }}–{{ x.end | hms }} · <span data-len>{{ (x.end - x.start) | round | int }}</span> s</span>
+          {% if x.locked %}<span class="pill ok">captioned</span>{% endif %}</div>
+        {% if not x.preview %}
+          {% if x.previewing %}<span class="muted">Making preview…</span>
+          {% else %}<button type="submit" class="small" formaction="/p/{{ row.id }}/candidates/{{ c.id }}/preview" formnovalidate>Preview</button>{% endif %}
+        {% endif %}
+      </div>
+      <p class="excerpt" lang="hy">{{ c.text[:240] }}{% if c.text | length > 240 %}…{% endif %}</p>
+      {% if x.parts %}
+      <details><summary>Why this moment</summary>
+        <ul class="plain" style="list-style:none;padding:0;margin:0">{% for label, pts in x.parts %}<li class="muted"><span class="{{ 'ok' if pts > 0 else 'bad' }}">{{ '%+.1f' | format(pts) }}</span> {{ label }}</li>{% endfor %}</ul>
+      </details>
+      {% endif %}
+      {% if x.preview %}
+      <div class="media" data-preview data-pstart="{{ x.preview.start }}" data-pend="{{ x.preview.end }}">
+        <div class="wframe"><video preload="metadata" src="/p/{{ row.id }}/previews/{{ c.id }}/preview.mp4" playsinline></video></div>
+        {% if not x.locked %}
+        <div class="trim" data-trim>
+          <div class="range-row"><span style="width:40px">Start</span><input type="range" step="0.1" data-handle="start" aria-label="Start of clip {{ x.n }}">
+            <button type="button" class="small ghost" data-nudge="start" data-by="-0.1" aria-label="Start earlier">−</button><button type="button" class="small ghost" data-nudge="start" data-by="0.1" aria-label="Start later">+</button></div>
+          <div class="range-row"><span style="width:40px">End</span><input type="range" step="0.1" data-handle="end" aria-label="End of clip {{ x.n }}">
+            <button type="button" class="small ghost" data-nudge="end" data-by="-0.1" aria-label="End earlier">−</button><button type="button" class="small ghost" data-nudge="end" data-by="0.1" aria-label="End later">+</button></div>
+          <div class="row"><button type="button" class="small" data-play>Play clip</button>
+            <button type="button" class="small ghost" data-reset>Reset to suggested</button>
+            <span class="muted" data-trim-label></span></div>
+          <input type="hidden" name="trim_{{ c.id }}" value="" data-trim-value>
+        </div>
+        {% endif %}
+      </div>
+      {% elif c.id %}
+      <p class="help"><a href="https://www.youtube.com/watch?v={{ project.source.video_id }}&amp;t={{ x.start | int }}s" target="_blank" rel="noopener noreferrer" {% if project.source.kind != 'youtube' or not project.source.video_id %}hidden{% endif %}>Open on YouTube ↗</a></p>
+      {% endif %}
+    </div>
+  </article>
+  {% endfor %}
+  </div>
+  <div class="sticky-bar">
+    <div class="inner">
+      <span class="grow" data-summary>{{ n_chosen }} selected · {{ chosen_duration }}</span>
+      <button type="submit" class="ghost small" name="next" value="save" style="color:#fff">Save</button>
+      <button type="submit" class="primary" name="next" value="captions" data-add-captions>Add captions</button>
+    </div>
+  </div>
+</form>
+{% endif %}
 {% endblock %}

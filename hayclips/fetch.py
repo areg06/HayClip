@@ -129,6 +129,27 @@ def _fetch_clip(repo: ProjectRepo, clip: Clip, source: SourceProvider, settings:
     return FetchResult(clip.id, "fetched", f"{files.end - files.start:.1f}s window")
 
 
+def supersede_window(repo: ProjectRepo, clip_id: str, reason: str) -> Path | None:
+    """Move a clip's fetched window aside (never delete) so a new window can be fetched after a trim.
+
+    Refused once any transcription attempt exists: a paid transcript may be bound to those bytes."""
+    from .transcription.store import list_attempts
+    if list_attempts(repo, clip_id):
+        raise PipelineError("this clip already has a transcript; trim it in the editor instead",
+                            hint="the downloaded window is bound to its paid transcript and is kept as is")
+    cdir = repo.clip_dir(clip_id)
+    if not (cdir / "window.json").exists():
+        return None
+    from .models import now_iso
+    dest = cdir / "superseded" / now_iso().replace(":", "")
+    dest.mkdir(parents=True)
+    for name in ("window.json", *MEDIA_NAMES, "youtube.srt", "crop.json"):
+        if (cdir / name).exists():
+            (cdir / name).rename(dest / name)
+    (dest / "reason.txt").write_text(reason + "\n", encoding="utf-8")
+    return dest
+
+
 def fetch_selected_clips(repo: ProjectRepo, clip_ids: list[str] | None = None, *,
                          source_factory: Callable[[dict, Settings], SourceProvider] | None = None,
                          settings: Settings | None = None, raise_errors: bool = False,

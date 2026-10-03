@@ -65,5 +65,83 @@
     });
   }
 
-  window.HayClips = { csrf: csrf };
+  // ---- Choose clips: live selection summary and pre-transcription trim (all in the browser; free) ----
+  function fmt(sec) {
+    sec = Math.max(0, Math.round(sec));
+    var m = Math.floor(sec / 60), s = sec % 60;
+    return m ? (m + ":" + (s < 10 ? "0" : "") + s) : (s + " s");
+  }
+  function mmss(sec) { var m = Math.floor(sec / 60), s = Math.floor(sec % 60); return m + ":" + (s < 10 ? "0" : "") + s; }
+  var chooser = document.getElementById("choose-form");
+  if (chooser) {
+    var cards = chooser.querySelectorAll("[data-cand]");
+    var summarise = function () {
+      var n = 0, total = 0;
+      cards.forEach(function (card) {
+        var box = card.querySelector('input[name="choose"]');
+        card.classList.toggle("on", box.checked);
+        if (box.checked) { n += 1; total += parseFloat(card.dataset.end) - parseFloat(card.dataset.start); }
+      });
+      var el = chooser.querySelector("[data-summary]");
+      if (el) el.textContent = n + " selected · " + fmt(total);
+      var add = chooser.querySelector("[data-add-captions]");
+      if (add) add.disabled = n === 0;
+    };
+    cards.forEach(function (card) {
+      card.querySelector('input[name="choose"]').addEventListener("change", summarise);
+      var media = card.querySelector("[data-preview]");
+      if (!media) return;
+      var video = media.querySelector("video");
+      var ps = parseFloat(media.dataset.pstart), pe = parseFloat(media.dataset.pend);
+      var trim = media.querySelector("[data-trim]");
+      if (!trim) return;
+      var hs = trim.querySelector('[data-handle="start"]'), he = trim.querySelector('[data-handle="end"]');
+      var value = trim.querySelector("[data-trim-value]"), label = trim.querySelector("[data-trim-label]");
+      [hs, he].forEach(function (h) { h.min = ps; h.max = pe; });
+      hs.value = card.dataset.start; he.value = card.dataset.end;
+      var sync = function (moved) {
+        var a = parseFloat(hs.value), b = parseFloat(he.value);
+        if (b - a < 5) { if (moved === hs) { a = b - 5; hs.value = a; } else { b = a + 5; he.value = b; } }
+        card.dataset.start = a.toFixed(2); card.dataset.end = b.toFixed(2);
+        var changed = Math.abs(a - parseFloat(card.dataset.suggestedStart)) > 0.04 || Math.abs(b - parseFloat(card.dataset.suggestedEnd)) > 0.04;
+        value.value = a.toFixed(2) + ":" + b.toFixed(2);
+        label.textContent = mmss(a) + "–" + mmss(b) + " · " + Math.round(b - a) + " s" + (changed ? " (trimmed)" : "");
+        var range = card.querySelector("[data-range]");
+        if (range) range.innerHTML = mmss(a) + "–" + mmss(b) + " · <span data-len>" + Math.round(b - a) + "</span> s";
+        if (moved && video.readyState > 0) video.currentTime = Math.max(0, (moved === he ? b - 1 : a) - ps);
+        summarise();
+      };
+      hs.addEventListener("input", function () { sync(hs); });
+      he.addEventListener("input", function () { sync(he); });
+      trim.querySelectorAll("[data-nudge]").forEach(function (b) {
+        b.addEventListener("click", function () {
+          var h = b.dataset.nudge === "start" ? hs : he;
+          h.value = (parseFloat(h.value) + parseFloat(b.dataset.by)).toFixed(2);
+          sync(h);
+        });
+      });
+      trim.querySelector("[data-reset]").addEventListener("click", function () {
+        hs.value = card.dataset.suggestedStart; he.value = card.dataset.suggestedEnd; sync(hs);
+      });
+      var stopAt = null;
+      trim.querySelector("[data-play]").addEventListener("click", function () {
+        if (!video.paused) { video.pause(); return; }
+        video.currentTime = Math.max(0, parseFloat(hs.value) - ps);
+        stopAt = parseFloat(he.value) - ps;
+        video.play();
+      });
+      video.addEventListener("timeupdate", function () { if (stopAt !== null && video.currentTime >= stopAt) { video.pause(); stopAt = null; } });
+      video.controls = true;
+      sync(null);
+      value.value = "";   // nothing changes on the server unless the user moves a handle
+      hs.addEventListener("change", function () { value.value = parseFloat(hs.value).toFixed(2) + ":" + parseFloat(he.value).toFixed(2); });
+      he.addEventListener("change", function () { value.value = parseFloat(hs.value).toFixed(2) + ":" + parseFloat(he.value).toFixed(2); });
+      trim.querySelectorAll("[data-nudge], [data-reset]").forEach(function (b) {
+        b.addEventListener("click", function () { value.value = parseFloat(hs.value).toFixed(2) + ":" + parseFloat(he.value).toFixed(2); });
+      });
+    });
+    summarise();
+  }
+
+  window.HayClips = { csrf: csrf, fmt: fmt };
 })();
