@@ -361,3 +361,17 @@ def test_errors_never_contain_key_or_signed_url(tmp_path, fake, capsys):
     text = str(exc.value) + json.dumps([a.to_dict() for a in list_attempts(repo, cid)])
     assert KEY not in text and "X-Signature" not in text
     assert list_attempts(repo, cid)[-1].state == FAILED and fake.submit_count == 0
+
+
+def test_before_submit_hook_can_stop_a_run_before_the_charge_point(tmp_path, fake):
+    """Phase 1c: the worker stops a paid job here when it cannot prove it still owns the job."""
+    from hayclips.errors import PipelineError
+    repo, (cid,) = make_project(tmp_path)
+
+    def stop():
+        raise PipelineError("lease uncertain")
+    with pytest.raises(PipelineError, match="lease uncertain"):
+        service.transcribe(repo, [cid], api_key=KEY, confirmed_by="op", hooks={"before_submit": stop})
+    assert fake.submit_count == 0
+    a = list_attempts(repo, cid)[-1]
+    assert a.state == FAILED and "before the charge point" in a.error          # safe to retry with confirmation

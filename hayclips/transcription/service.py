@@ -310,6 +310,7 @@ def _submit_locked(repo, clip, p: ClipPlan, client, settings, confirmed_by, cons
                           repo.media_path(clip.id, p.media))
         a.transition(UPLOADED)
         save_attempt(repo, a)
+        _hook("before_submit", hooks, client)        # last chance to stop (e.g. worker lost its lease); free
     except PipelineError as exc:
         _fail(repo, a, FAILED, f"before the charge point: {exc.message}")
         raise
