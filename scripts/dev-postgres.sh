@@ -20,7 +20,11 @@ port = $PORT
 CONF
     echo "initialised $DATA" ;;
   start)
-    pg_ctl -D "$DATA" -l "$HOME_DIR/postgres.log" -w start >/dev/null
+    if pg_ctl -D "$DATA" status >/dev/null 2>&1; then
+      echo "already running"
+    else
+      pg_ctl -D "$DATA" -l "$HOME_DIR/postgres.log" -w start >/dev/null
+    fi
     createdb -h "$SOCK" -p "$PORT" -U hayclips hayclips 2>/dev/null || true
     echo "running: host=$SOCK port=$PORT dbname=hayclips user=hayclips" ;;
   stop)   pg_ctl -D "$DATA" -w stop ;;
