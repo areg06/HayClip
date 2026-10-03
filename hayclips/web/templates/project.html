@@ -49,7 +49,7 @@
     <td>{{ c.order }}</td>
     <td lang="hy">{% if c.selected %}<span class="tag ok">selected</span>{% else %}<span class="tag">unselected</span>{% endif %} {{ c.title or '(untitled)' }}<div class="meta">{{ c.id }} · {{ c.start | hms }}–{{ c.end | hms }} ({{ (c.end - c.start) | round | int }} s){% if c.hook %} · hook «{{ c.hook }}»{% endif %}</div></td>
     <td>{{ 'downloaded' if x.window else '—' }}</td>
-    <td>{% if x.attempt %}{{ x.attempt.state }}<div class="meta">{{ x.attempt.state | safety }}</div>{% else %}—{% endif %}</td>
+    <td>{% if x.attempt %}{{ {'COMPLETED': 'transcribed'}.get(x.attempt.state, x.attempt.state) }}{% if (x.attempt.state | safety) != x.attempt.state %}<div class="meta">{{ x.attempt.state | safety }}</div>{% endif %}{% else %}—{% endif %}</td>
     <td>{{ x.rendered | join(', ') or '—' }}</td>
     <td class="row">
       <form class="inline" method="post" action="/p/{{ row.id }}/clips/{{ c.id }}/move">{% include "_csrf.html" %}<input type="hidden" name="dir" value="up"><button type="submit" aria-label="move up">↑</button></form>
