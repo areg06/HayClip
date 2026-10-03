@@ -81,6 +81,9 @@ scripts/dev-up.sh            # socket-only Postgres + worker + web app on http:/
 - New projects go to `HAYCLIPS_PROJECTS_ROOT` (default `projects/`, gitignored). Existing `pilot-*`
   folders can be opened from the dashboard.
 - The CLI keeps working on the same project folders.
+- Browser click-through test (offline, fake yt-dlp and fake Harmar): `.venv/bin/python -m playwright install chromium`
+  once, then `.venv/bin/python -m pytest -q tests/test_browser_e2e.py`.
+- Each project has a local operator summary (`/p/<id>/summary`): would-post rate, minutes to fix, edits needed.
 
 ## Project layout and who owns what
 
