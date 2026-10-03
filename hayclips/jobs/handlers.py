@@ -124,8 +124,13 @@ def transcribe(job: dict, ctx: Context) -> dict:
     from ..transcription import service
     _test_sleep(ctx)
     ctx.progress(0.05, "checking consent, budgets and existing transcripts")
+    def ownership_check():
+        if ctx.cancelled():
+            raise JobCancelled("stopped before the charge point: the job was cancelled or the worker could not "
+                               "prove it still owns the job; nothing was submitted")
     outcomes = service.transcribe(ctx.repo, p["clip_ids"], settings=ctx.settings,
-                                  api_key=os.environ.get("HARMAR_API_KEY") or None, confirmed_by=p["confirmed_by"])
+                                  api_key=os.environ.get("HARMAR_API_KEY") or None, confirmed_by=p["confirmed_by"],
+                                  hooks={"before_submit": ownership_check})
     out = [{"clip_id": o.clip_id, "action": o.action, "note": o.note,
             "state": o.attempt.state if o.attempt else None,
             "retry_safety": retry_safety(o.attempt.state) if o.attempt else None} for o in outcomes]

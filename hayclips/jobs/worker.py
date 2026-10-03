@@ -6,6 +6,17 @@
   A paid job is never interrupted inside the transcription service (it only checks before starting).
 - SIGTERM/SIGINT: stop claiming, let the current job finish, then exit.
 - Every 30 s the worker also runs the reaper (expired leases; paid jobs are never re-run).
+
+Database outage policy (Phase 1c):
+- A failed heartbeat is retried on a fresh connection at the next beat; a short outage changes nothing.
+- If the worker cannot re-prove ownership within 2/3 of the lease (i.e. before the lease could expire
+  and another worker could take the job), the lease is UNCERTAIN: the handler is told to stop at its
+  next check and the outcome is not written. Uncertain is treated exactly like lost, and stays so.
+- Paid jobs check ownership right before the charging submit (service hook "before_submit"), so a
+  paid submission never starts without a provable lease. After a submit, polling is free and continues.
+- An unreachable database while claiming is logged and retried with backoff; nothing is claimed.
+- A result write is retried a few times on fresh connections; if it still fails the job is left
+  RUNNING for the reaper (safe jobs retry later and are idempotent; paid jobs are never re-run).
 """
 from __future__ import annotations
 
@@ -24,6 +35,9 @@ from . import handlers as H
 from . import queue as q
 
 REAP_EVERY = 30.0
+UNCERTAIN_AFTER = 2 / 3                 # fraction of the lease without a confirmed heartbeat
+RESULT_RETRY_DELAYS = (0.5, 1, 2, 4)    # seconds between result-write attempts
+CLAIM_BACKOFF_MAX = 30.0
 
 
 def log(msg: str) -> None:
@@ -36,9 +50,15 @@ class _Heartbeat(threading.Thread):
         self.dsn, self.job_id, self.worker_id, self.lease = dsn, job_id, worker_id, lease_seconds
         self.stop_event = threading.Event()
         self.cancel = False
-        self.lost = False
+        self.lost = False          # the database says another owner (or no owner) has the job
+        self.uncertain = False     # we could not prove ownership before the lease could expire
+        self.last_ok = time.monotonic()   # the claim itself proved ownership
         self._progress: tuple[float | None, str | None] = (None, None)
         self._lock = threading.Lock()
+
+    @property
+    def owned(self) -> bool:
+        return not (self.lost or self.uncertain)
 
     def set_progress(self, fraction: float, note: str = "") -> None:
         with self._lock:
@@ -46,18 +66,33 @@ class _Heartbeat(threading.Thread):
 
     def run(self) -> None:
         interval = max(self.lease / 3.0, 0.2)
-        with db.connect(self.dsn) as conn:
+        conn = None
+        try:
             while not self.stop_event.wait(interval):
                 with self._lock:
                     frac, note = self._progress
                 try:
+                    if conn is None or conn.closed:
+                        conn = db.connect(self.dsn)
                     row = q.heartbeat(conn, self.job_id, self.worker_id, self.lease, frac, note)
-                except psycopg.Error:
-                    continue                  # transient DB hiccup; the next beat retries
+                except psycopg.Error as exc:
+                    if conn is not None:
+                        conn.close()
+                    conn = None
+                    if time.monotonic() - self.last_ok >= self.lease * UNCERTAIN_AFTER:
+                        self.uncertain = True
+                        log(f"job {self.job_id}: lease uncertain (database unreachable for "
+                            f"{time.monotonic() - self.last_ok:.0f}s: {str(exc).splitlines()[0][:80]}); stopping the job")
+                        return
+                    continue
                 if row is None:
                     self.lost = True
                     return
+                self.last_ok = time.monotonic()
                 self.cancel = bool(row["cancel_requested"])
+        finally:
+            if conn is not None:
+                conn.close()
 
 
 class Worker:
@@ -99,28 +134,45 @@ class Worker:
                 raise PipelineError("local project files are missing (MISSING_STORAGE); the job was not run",
                                     hint="restore the project folder, or remove the stale entry from the dashboard")
             ctx = H.Context(repo=ProjectRepo(Path(project["dir"])), settings=load_settings(),
-                            progress=hb.set_progress, cancelled=lambda: hb.cancel or hb.lost)
+                            progress=hb.set_progress, cancelled=lambda: hb.cancel or not hb.owned)
             result = H.HANDLERS[jtype](job, ctx)
         except BaseException as exc:  # noqa: BLE001 - every failure must be recorded
             hb.stop_event.set()
             hb.join()
-            if hb.lost:
-                log(f"job {jid} {jtype}: lease lost; outcome not recorded")
+            if not hb.owned:
+                log(f"job {jid} {jtype}: lease {'lost' if hb.lost else 'uncertain'}; outcome not recorded")
                 return
             if isinstance(exc, KeyboardInterrupt):
                 self.stopping = True
             retry = H.is_retryable(exc) and not isinstance(exc, H.JobCancelled)
-            state = q.fail(conn, jid, worker_id, H.error_text(exc), retryable=retry,
-                           result=getattr(exc, "job_result", None))
-            log(f"job {jid} {jtype} {state}: {H.error_text(exc).splitlines()[0][:200]}")
+            state = self._record(jid, jtype, lambda c: q.fail(c, jid, worker_id, H.error_text(exc), retryable=retry,
+                                                            result=getattr(exc, "job_result", None)), conn)
+            if state:
+                log(f"job {jid} {jtype} {state}: {H.error_text(exc).splitlines()[0][:200]}")
             return
         hb.stop_event.set()
         hb.join()
-        if hb.lost:
-            log(f"job {jid} {jtype}: lease lost; outcome not recorded")
+        if not hb.owned:
+            log(f"job {jid} {jtype}: lease {'lost' if hb.lost else 'uncertain'}; outcome not recorded")
             return
-        q.succeed(conn, jid, worker_id, result)
-        log(f"job {jid} {jtype} SUCCEEDED")
+        if self._record(jid, jtype, lambda c: q.succeed(c, jid, worker_id, result) and "SUCCEEDED", conn):
+            log(f"job {jid} {jtype} SUCCEEDED")
+
+    def _record(self, jid, jtype, write, conn):
+        """Write a job outcome, retrying on fresh connections; give up to the reaper if the DB stays down."""
+        for k, delay in enumerate((0.0, *RESULT_RETRY_DELAYS)):
+            if delay:
+                time.sleep(delay)
+            try:
+                if k == 0:
+                    return write(conn)
+                with db.connect(self.dsn) as fresh:
+                    return write(fresh)
+            except psycopg.Error as exc:
+                last = str(exc).splitlines()[0][:120]
+        log(f"job {jid} {jtype}: result not recorded (database unavailable: {last}); "
+            "the reaper will settle the job after its lease expires")
+        return None
 
     def maybe_reap(self, conn) -> None:
         if time.monotonic() - self._last_reap >= REAP_EVERY:
@@ -129,15 +181,35 @@ class Worker:
                 log(f"reaper: job {r['id']} {r['type']} -> {r['state']}")
 
     def run(self, once: bool = False) -> None:
-        with db.connect(self.dsn) as conn:
-            log(f"worker started, pools {','.join(self.pools)}")
+        log(f"worker started, pools {','.join(self.pools)}")
+        conn, failures = None, 0
+        try:
             while not self.stopping:
-                self.maybe_reap(conn)
-                ran = self.run_one(conn)
+                try:
+                    if conn is None or conn.closed:
+                        conn = db.connect(self.dsn)
+                    self.maybe_reap(conn)
+                    ran = self.run_one(conn)
+                    failures = 0
+                except psycopg.Error as exc:
+                    failures += 1
+                    if conn is not None:
+                        conn.close()
+                    conn = None
+                    wait = min(CLAIM_BACKOFF_MAX, 2 ** (failures - 1))
+                    log(f"database unavailable ({str(exc).splitlines()[0][:100]}); nothing claimed; "
+                        + ("giving up for this run" if once else f"retrying in {wait:.0f}s"))
+                    if once:
+                        return
+                    time.sleep(wait)
+                    continue
                 if once:
                     return
                 if not ran:
                     time.sleep(self.poll_interval)
+        finally:
+            if conn is not None:
+                conn.close()
             log("worker stopped")
 
 
