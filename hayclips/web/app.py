@@ -27,7 +27,7 @@ from ..errors import PipelineError, ValidationError
 from ..jobs import contracts, queue
 from ..models import ConsentRecord, Trim, new_id, retry_safety
 from ..project import ProjectRepo
-from ..selection import explain, stamp
+from ..selection import explain, explain_parts, stamp
 from ..sources.youtube import canonical_url, parse_youtube_ref
 from ..transcription import budget
 from ..transcription.store import list_attempts
@@ -245,9 +245,19 @@ def create_app(*, dsn: str | None = None, projects_root: Path | None = None, rep
             clips.append({"clip": cl, "window": w, "attempt": att[-1] if att else None,
                           "rendered": sorted(info["outputs"]) if info else []})
         captions = sorted(p.name for p in (repo.root / "source").glob("*.srt")) if (repo.root / "source").exists() else []
-        n_transcribed = len(transcribed(repo, [x["clip"].id for x in clips if x["clip"].selected]))
+        sel = [x for x in clips if x["clip"].selected]
+        n_transcribed = len(transcribed(repo, [x["clip"].id for x in sel]))
+        with conn() as c:
+            n_reviewed = c.execute("SELECT count(DISTINCT clip_id) AS n FROM review_decisions WHERE project_id = %s",
+                                   (pid,)).fetchone()["n"]
+        done = [bool(captions), bool(cands), bool(sel), bool(sel) and all(x["window"] for x in sel),
+                bool(sel) and n_transcribed == len(sel), bool(sel) and all(x["rendered"] for x in sel),
+                bool(sel) and n_reviewed >= len(sel)]
+        current = next((k for k, d in enumerate(done) if not d), None)
+        active = [j for j in jobs if j["state"] in ("QUEUED", "RUNNING", "RETRY_WAIT")]
         return page(request, "project.html", row=row, project=project, clips=clips, jobs=jobs, msg=msg,
-                    n_candidates=len(cands), captions=captions, n_transcribed=n_transcribed)
+                    n_candidates=len(cands), captions=captions, n_transcribed=n_transcribed,
+                    steps_done=done, current_step=current, active_jobs=active)
 
     @app.get("/p/{pid}/jobs", response_class=HTMLResponse)
     def jobs_partial(request: Request, pid: str):
@@ -346,7 +356,7 @@ def create_app(*, dsn: str | None = None, projects_root: Path | None = None, rep
             vid = parse_youtube_ref(vid or project.source.get("url", ""))
         except PipelineError:
             vid = ""
-        cands = [{"c": x, "explain": explain(x), "clip": taken.get(x.id),
+        cands = [{"c": x, "explain": explain(x), "parts": explain_parts(x), "clip": taken.get(x.id),
                   "watch": f"https://www.youtube.com/watch?v={vid}&t={int(x.start)}s" if vid else None}
                  for x in repo.load_candidates()]
         return page(request, "candidates.html", row=row, project=project, cands=cands, msg=msg)
@@ -549,7 +559,8 @@ def create_app(*, dsn: str | None = None, projects_root: Path | None = None, rep
             w = repo.load_window(cl.id)
             cards.append({"clip": cl, "info": info, "window": w, "transcribed": bool(transcribed(repo, [cl.id])),
                           "transcript": srt_lines(repo.render_dir(cl.id) / "captions.srt"),
-                          "decisions": [d for d in decisions if d["clip_id"] == cl.id]})
+                          "decisions": [d for d in decisions if d["clip_id"] == cl.id],
+                          "cut": (info or {}).get("cut")})
         return page(request, "review.html", row=row, project=project, cards=cards, msg=msg)
 
     @app.post("/p/{pid}/clips/{cid}/review")

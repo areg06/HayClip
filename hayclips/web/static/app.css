@@ -34,3 +34,12 @@ code { color: var(--muted); }
 .row { display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; }
 ul.plain { list-style:none; padding-left:0; }
 .tag.bad { color: var(--bad); border-color: var(--bad); } .tag.warn { color: var(--warn); border-color: var(--warn); } .tag.ok { color: var(--ok); border-color: var(--ok); }
+.steps li.current { background:#3a5a8a; outline:2px solid var(--accent); font-weight:600; }
+p.next { margin:.4rem 0 1rem; }
+.error-box { color: var(--bad); white-space: pre-wrap; font-size:.9rem; margin-top:.2rem; }
+.checks { border:1px solid var(--warn); border-radius:10px; padding:.5rem .9rem; color: var(--warn); margin:.6rem 0; }
+.checks ul { margin:.3rem 0 0; }
+.downloads { margin:.8rem 0; }
+a.button { display:inline-block; background:#2f6f4e; border:1px solid #3f8f65; color:var(--ink); border-radius:8px; padding:.45rem .9rem; text-decoration:none; }
+label.choice { display:inline-flex; gap:.35rem; align-items:center; font-size:1rem; color:var(--ink); background:#24364f; padding:.35rem .7rem; border-radius:8px; }
+details.score summary { cursor:pointer; color: var(--muted); }

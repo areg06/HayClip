@@ -6,7 +6,10 @@
 Nothing is published. Which clip and style would you actually post, and how long would fixing it take?</div>
 {% for x in cards %}{% set c = x.clip %}{% set info = x.info %}
 <section class="card">
-  <h2 lang="hy">#{{ c.order }} · {{ c.title or '(untitled)' }}</h2>
+  {% set last = x.decisions[0] if x.decisions else none %}
+  <h2 lang="hy">#{{ c.order }} · {{ c.title or '(untitled)' }}
+    {% if last %}<span class="tag ok">reviewed: {{ {'yes': 'would post', 'maybe': 'maybe', 'no': 'would not post'}[last.would_post] }}</span>
+    {% elif info %}<span class="tag warn">machine output — not reviewed</span>{% endif %}</h2>
   <p class="meta">{{ c.id }}{% if c.pick_note %} · {{ c.pick_note }}{% endif %}</p>
   {% if not info %}
     {% if not x.window %}<p class="muted">Not rendered yet: download the window first (step 4).</p>
@@ -20,7 +23,8 @@ Nothing is published. Which clip and style would you actually post, and how long
       first word at {{ info.first_word_at or 0 }} s</p>
     <p class="meta">Framing: {{ info.framing }} · alignment: {{ info.alignment.method }} ({{ (info.alignment.lag_s * 1000) | round | int }} ms) · audio: {{ info.audio }}</p>
     {% if info.hook %}<p>Hook (draft, needs founder approval): «<span lang="hy">{{ info.hook }}</span>»</p>{% endif %}
-    {% if info.checks %}<ul>{% for k in info.checks %}<li class="warn">CHECK: {{ k }}</li>{% endfor %}</ul>{% endif %}
+    {% if info.checks %}<div class="checks" role="note"><strong>{{ info.checks | length }} thing(s) to check before posting</strong>
+      <ul>{% for k in info.checks %}<li>{{ k }}</li>{% endfor %}</ul></div>{% else %}<p class="ok">No automatic warnings for this render.</p>{% endif %}
     <div class="grid">
     {% for st, o in info.outputs | dictsort %}
       <figure><figcaption>{{ st }} · {{ o.width }}x{{ o.height }} · {{ o.duration }} s ·
@@ -28,8 +32,11 @@ Nothing is published. Which clip and style would you actually post, and how long
         <video controls preload="metadata" src="/p/{{ row.id }}/media/{{ c.id }}/{{ st }}.mp4"></video></figure>
     {% endfor %}
     </div>
-    <p><a href="/p/{{ row.id }}/media/{{ c.id }}/captions.srt?download=1">Download SRT</a>
-      {% if x.window and x.window.wide %} · <a href="/p/{{ row.id }}/media/{{ c.id }}/wide.mp4">uncut padded window</a>{% endif %}</p>
+    <div class="downloads row">
+      {% for st in info.outputs | sort %}<a class="button" href="/p/{{ row.id }}/media/{{ c.id }}/{{ st }}.mp4?download=1">Download MP4 ({{ st }})</a>{% endfor %}
+      <a class="button" href="/p/{{ row.id }}/media/{{ c.id }}/captions.srt?download=1">Download SRT</a>
+      {% if x.window and x.window.wide %}<a href="/p/{{ row.id }}/media/{{ c.id }}/wide.mp4">uncut padded window</a>{% endif %}
+    </div>
     <details><summary>Transcript ({{ info.word_source }}, unreviewed)</summary>
       <ul class="plain" lang="hy">{% for t, line in x.transcript %}<li><code>{{ t }}</code> {{ line }}</li>{% endfor %}</ul></details>
   {% endif %}
@@ -40,8 +47,9 @@ Nothing is published. Which clip and style would you actually post, and how long
     <label>Title</label><input type="text" name="title" value="{{ c.title }}" maxlength="200" lang="hy">
     <label>Hook (≤45 characters)</label><input type="text" name="hook" value="{{ c.hook }}" maxlength="45" lang="hy">
     <label>Pick note</label><input type="text" name="pick_note" value="{{ c.pick_note }}" maxlength="500">
-    <label>Trim inside the padded window: START:END seconds, or "auto"{% if c.trim %} (now {{ c.trim.caption_start }}:{{ c.trim.caption_end }}){% else %} (now auto){% endif %}</label>
-    <input type="text" name="trim" placeholder="e.g. 4.9:56.2 or auto">
+    <label>Cut inside the padded window (START:END seconds), or "auto" for the automatic sentence snap.
+      Now: {% if c.trim %}manual {{ c.trim.caption_start }}:{{ c.trim.caption_end }}{% elif x.cut %}auto {{ x.cut.start }}:{{ x.cut.end }}{% else %}auto{% endif %}</label>
+    <input type="text" name="trim" value="{% if c.trim %}{{ c.trim.caption_start }}:{{ c.trim.caption_end }}{% endif %}" placeholder="{% if x.cut %}{{ x.cut.start }}:{{ x.cut.end }}{% else %}e.g. 4.9:56.2{% endif %} or auto">
     <p><button type="submit">Save</button></p>
   </form>
   {% if x.transcribed %}{% with clip_id = c.id %}{% include "_render_form.html" %}{% endwith %}{% endif %}
@@ -51,10 +59,10 @@ Nothing is published. Which clip and style would you actually post, and how long
   <form method="post" action="/p/{{ row.id }}/clips/{{ c.id }}/review">
     {% include "_csrf.html" %}
     <div class="row">
-      <label><input type="radio" name="would_post" value="yes" required> would post</label>
-      <label><input type="radio" name="would_post" value="maybe"> maybe</label>
-      <label><input type="radio" name="would_post" value="no"> would not post</label>
-      <label>style <select name="style"><option value="">—</option><option>A</option><option>B</option><option>C</option></select></label>
+      <label class="choice"><input type="radio" name="would_post" value="yes" required> Would post</label>
+      <label class="choice"><input type="radio" name="would_post" value="maybe"> Maybe</label>
+      <label class="choice"><input type="radio" name="would_post" value="no"> Would not post</label>
+      <label>style <select name="style"><option value="">—</option>{% for st in ['A', 'B', 'C'] %}<option{% if info and st in info.outputs and (info.outputs | length) == 1 %} selected{% endif %}>{{ st }}</option>{% endfor %}</select></label>
       <label>minutes to fix <input type="number" name="minutes_to_fix" min="0" max="10000"></label>
     </div>
     <label>Notes</label><textarea name="notes" maxlength="2000"></textarea>

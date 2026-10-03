@@ -1,14 +1,20 @@
+{% set labels = {'QUEUED': 'waiting', 'RUNNING': 'running', 'RETRY_WAIT': 'will retry', 'SUCCEEDED': 'done',
+  'FAILED': 'failed', 'CANCELLED': 'cancelled'} %}
+{% set names = {'import_captions': 'Fetch captions', 'generate_candidates': 'Generate candidates',
+  'fetch_windows': 'Download windows', 'transcribe': 'Transcribe', 'render': 'Render'} %}
 {% if not jobs %}<p class="muted">No jobs yet.</p>{% else %}
-<table>
-<thead><tr><th>#</th><th>Job</th><th>State</th><th>Progress</th><th>Note / error</th><th></th></tr></thead>
+<table class="jobs">
+<thead><tr><th>#</th><th>Job</th><th>Status</th><th>Queued</th><th>Details</th><th></th></tr></thead>
 <tbody>
 {% for j in jobs %}
-<tr>
+<tr data-job-state="{{ j.state }}">
   <td>{{ j.id }}</td>
-  <td>{{ j.type }}{% if j.pool == 'paid' %} <span class="tag warn">paid</span>{% endif %}</td>
-  <td class="{{ 'ok' if j.state == 'SUCCEEDED' else ('bad' if j.state == 'FAILED' else '') }}">{{ j.state }}{% if j.attempts > 1 %} (try {{ j.attempts }}){% endif %}</td>
-  <td>{% if j.progress is not none %}{{ (j.progress * 100) | round | int }}%{% endif %}</td>
-  <td>{{ j.progress_note or '' }}{% if j.error %}<div class="bad">{{ j.error }}</div>{% endif %}</td>
+  <td>{{ names.get(j.type, j.type) }}{% if j.pool == 'paid' %} <span class="tag warn">paid</span>{% endif %}</td>
+  <td><span class="tag {{ 'ok' if j.state == 'SUCCEEDED' else ('bad' if j.state == 'FAILED' else ('warn' if j.state in ('RUNNING', 'RETRY_WAIT', 'QUEUED') else '')) }}">{{ labels.get(j.state, j.state) }}</span>
+    {% if j.state == 'RUNNING' and j.progress is not none %} {{ (j.progress * 100) | round | int }}%{% endif %}
+    {% if j.attempts > 1 %}<span class="muted"> (try {{ j.attempts }})</span>{% endif %}</td>
+  <td class="muted">{{ j.created_at.strftime('%H:%M:%S') }}</td>
+  <td>{{ j.progress_note or '' }}{% if j.error %}<div class="error-box">{{ j.error }}</div>{% endif %}</td>
   <td>{% if j.state in ('QUEUED', 'RUNNING', 'RETRY_WAIT') %}
     <form class="inline" method="post" action="/p/{{ j.project_id }}/jobs/{{ j.id }}/cancel">{% include "_csrf.html" %}<button class="danger" type="submit">Cancel</button></form>
   {% endif %}</td>

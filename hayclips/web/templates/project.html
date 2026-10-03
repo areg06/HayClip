@@ -4,18 +4,18 @@
 <h1>{{ project.name }}</h1>
 <p class="muted">Source: {{ project.source.url or 'unknown' }}{% if project.source.duration %} · {{ project.source.duration | hms }}{% endif %}{% if project.source.title %} · <span lang="hy">{{ project.source.title }}</span>{% endif %}</p>
 
-{% set has_windows = clips | selectattr('window') | list | length > 0 %}
-{% set has_transcripts = clips | selectattr('attempt') | list | length > 0 %}
-{% set has_renders = clips | selectattr('rendered') | list | length > 0 %}
+{% set step_names = ['Captions', 'Candidates', 'Select', 'Download windows', 'Transcribe (paid)', 'Render', 'Review'] %}
+{% set next_help = ['Fetch the free captions (step 1).', 'Generate candidates from the captions (step 2).',
+  'Open the candidates and select the 2–3 windows that make sense on their own (step 3).',
+  'Download the selected windows (step 4).', 'Transcribe the selected clips (step 5, paid).',
+  'Render the transcribed clips (step 6).', 'Review each rendered clip and save a decision (step 7).'] %}
 <ol class="steps" aria-label="workflow">
-  <li class="{{ 'done' if captions }}">1 Captions</li>
-  <li class="{{ 'done' if n_candidates }}">2 Candidates</li>
-  <li class="{{ 'done' if clips }}">3 Select</li>
-  <li class="{{ 'done' if has_windows }}">4 Download windows</li>
-  <li class="{{ 'done' if has_transcripts }}">5 Transcribe (paid)</li>
-  <li class="{{ 'done' if has_renders }}">6 Render</li>
-  <li>7 Review</li>
+  {% for name in step_names %}
+  <li class="{{ 'done' if steps_done[loop.index0] }}{{ ' current' if current_step == loop.index0 }}"{% if current_step == loop.index0 %} aria-current="step"{% endif %}>{{ loop.index }} {{ name }}{% if steps_done[loop.index0] %} ✓{% endif %}</li>
+  {% endfor %}
 </ol>
+<p class="next">{% if current_step is not none %}<strong>Next:</strong> {{ next_help[current_step] }}{% if current_step == 4 and not paid_enabled %} Paid transcription is disabled here, so new clips stop at this step.{% endif %}{% else %}<strong>All steps done.</strong> See the <a href="/p/{{ row.id }}/summary">summary</a>.{% endif %}
+{% if active_jobs %}<span class="tag warn" id="active-jobs">{{ active_jobs | length }} job(s) in progress — see Jobs below</span>{% endif %}</p>
 
 <section class="card">
   <h2>1–2 · Free captions and candidates</h2>
@@ -47,7 +47,7 @@
   {% for x in clips %}{% set c = x.clip %}
   <tr class="{{ '' if c.selected else 'muted' }}">
     <td>{{ c.order }}</td>
-    <td lang="hy">{{ c.title or '(untitled)' }}<div class="meta">{{ c.id }} · {{ c.start | hms }}–{{ c.end | hms }} ({{ (c.end - c.start) | round | int }} s){% if c.hook %} · hook «{{ c.hook }}»{% endif %}</div></td>
+    <td lang="hy">{% if c.selected %}<span class="tag ok">selected</span>{% else %}<span class="tag">unselected</span>{% endif %} {{ c.title or '(untitled)' }}<div class="meta">{{ c.id }} · {{ c.start | hms }}–{{ c.end | hms }} ({{ (c.end - c.start) | round | int }} s){% if c.hook %} · hook «{{ c.hook }}»{% endif %}</div></td>
     <td>{{ 'downloaded' if x.window else '—' }}</td>
     <td>{% if x.attempt %}{{ x.attempt.state }}<div class="meta">{{ x.attempt.state | safety }}</div>{% else %}—{% endif %}</td>
     <td>{{ x.rendered | join(', ') or '—' }}</td>

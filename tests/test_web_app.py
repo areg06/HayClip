@@ -265,7 +265,9 @@ def test_review_page_and_decision_stored(env):
     pid = make_project(client)
     repo, clip = with_rendered_clip(dsn, pid)
     page = client.get(f"/p/{pid}/review")
-    assert page.status_code == 200 and "unreviewed machine output" in page.text and "CHECK: shot at 3.0s" in page.text
+    assert page.status_code == 200 and "unreviewed machine output" in page.text
+    assert "1 thing(s) to check before posting" in page.text and "shot at 3.0s" in page.text
+    assert "machine output — not reviewed" in page.text and "Download MP4 (A)" in page.text
     assert post(client, f"/p/{pid}/clips/{clip.id}/review",
                 {"would_post": "maybe", "style": "A", "minutes_to_fix": "12", "notes": "cut late", "reviewer": "ed"}).status_code == 303
     assert post(client, f"/p/{pid}/clips/{clip.id}/review", {"would_post": "definitely"}).headers["location"].endswith("maybe")
@@ -273,7 +275,8 @@ def test_review_page_and_decision_stored(env):
     with db.connect(dsn) as c:
         rows = c.execute("SELECT * FROM review_decisions WHERE project_id = %s", (pid,)).fetchall()
     assert len(rows) == 1 and rows[0]["minutes_to_fix"] == 12 and rows[0]["style"] == "A"
-    assert "12 min" in client.get(f"/p/{pid}/review").text
+    after = client.get(f"/p/{pid}/review").text
+    assert "12 min" in after and "reviewed: maybe" in after and "machine output — not reviewed" not in after
 
 
 def test_register_existing_only_within_allowlist(env, tmp_path):

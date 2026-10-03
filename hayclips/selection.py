@@ -179,6 +179,27 @@ def pick(clips: list[Candidate], count: int) -> list[Candidate]:
     return selected
 
 
+def explain_parts(c: Candidate) -> list[tuple[str, float]]:
+    """Plain-language score parts (label, points), largest effect first; empty for old candidates."""
+    f = c.features or {}
+    if "ending_sentence" not in f:
+        return []
+    g = lambda k: float(f.get(k) or 0)  # noqa: E731
+    parts = [
+        ("ends on a complete sentence", g("ending_sentence")),
+        ("opens with a question", g("opening_question")),
+        ("opens with a number, name or strong claim", g("opening_specific")),
+        (f"starts with a weak connective «{f['weak_starter_word']}»" if f.get("weak_starter_word") else
+         "starts with a weak connective", g("weak_starter")),
+        (f"laughter ({f.get('laughs', 0)}×)", g("laugh_bonus")),
+        ("speech pace", g("pace")),
+        (f"fillers ({f.get('fillers_per_min', 0)}/min)", g("filler_penalty")),
+        (f"silence ({f.get('silence_s', 0)} s)", g("silence_penalty")),
+        ("length", g("length_bonus")),
+    ]
+    return sorted([p for p in parts if abs(p[1]) >= 0.005], key=lambda p: -abs(p[1]))
+
+
 def explain(c: Candidate) -> str:
     """Human-readable score parts. Tolerates candidates written by older versions (missing features)."""
     f = c.features or {}
