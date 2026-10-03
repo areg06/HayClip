@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}New video{% endblock %}
+{% block topaction %}{% endblock %}
+{% block content %}
+<div class="page-head"><div class="grow"><h1>New video</h1><p class="muted">Use only videos whose creator agreed to processing.</p></div></div>
+{% if error %}<div class="notice bad" role="alert">{{ error }}{% if hint %} <span class="muted">{{ hint }}</span>{% endif %}</div>{% endif %}
+<div class="seg-toggle" role="tablist" aria-label="source" data-tabs>
+  <button type="button" role="tab" aria-pressed="{{ 'false' if tab == 'upload' else 'true' }}" data-tab="youtube">YouTube link</button>
+  <button type="button" role="tab" aria-pressed="{{ 'true' if tab == 'upload' else 'false' }}" data-tab="upload">Upload a file</button>
+</div>
+<section class="surface" data-panel="youtube" style="margin-top:16px;max-width:640px" {% if tab == 'upload' %}hidden{% endif %}>
+  <form method="post" action="/projects">
+    {% include "_csrf.html" %}<input type="hidden" name="find" value="1">
+    <label for="name">Name</label>
+    <input id="name" name="name" type="text" required maxlength="120" value="{{ form_name or '' }}" placeholder="e.g. Episode 12">
+    <label for="url">YouTube link</label>
+    <input id="url" name="url" type="text" required placeholder="https://www.youtube.com/watch?v=...">
+    <p class="help">HayClips reads the free YouTube captions to find moments. Nothing is paid for at this step.</p>
+    <p style="margin-top:16px"><button class="primary" type="submit">Find clips</button></p>
+  </form>
+</section>
+<section class="surface" data-panel="upload" style="margin-top:16px;max-width:640px" {% if tab != 'upload' %}hidden{% endif %}>
+  <form id="upload-form" data-upload-url="/new/upload" data-csrf="{{ csrf }}">
+    <label for="up-name">Name</label>
+    <input id="up-name" name="name" type="text" required maxlength="120" placeholder="e.g. Interview, March">
+    <label for="up-file">Video file (MP4, MOV or M4V · up to {{ max_gb }} GB · up to {{ max_hours }} h)</label>
+    <input id="up-file" name="file" type="file" accept=".mp4,.mov,.m4v,video/mp4,video/quicktime,video/x-m4v" required>
+    <p class="help">To find moments, HayClips makes a quick, approximate transcript on this computer.
+      The full video is never sent to a paid service.</p>
+    <p style="margin-top:16px"><button class="primary" type="submit">Upload and find clips</button></p>
+    <p class="help" data-upload-status role="status"></p>
+  </form>
+</section>
+{% endblock %}

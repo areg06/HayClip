@@ -157,6 +157,21 @@ class Worker:
             return
         if self._record(jid, jtype, lambda c: q.succeed(c, jid, worker_id, result) and "SUCCEEDED", conn):
             log(f"job {jid} {jtype} SUCCEEDED")
+            self._continue_chain(conn, job)
+
+    def _continue_chain(self, conn, job: dict) -> None:
+        """Enqueue the next step of a confirmed chain (e.g. download -> transcribe -> render)."""
+        from .contracts import next_job
+        try:
+            nxt = next_job(job["type"], job.get("payload") or {})
+            if nxt is None:
+                return
+            jtype, payload = nxt
+            new = q.enqueue(conn, project_id=job["project_id"], type=jtype, payload=payload,
+                            idempotency_key=f"chain:{job['id']}:{jtype}", requested_by=job.get("requested_by"))
+            log(f"job {job['id']} -> chained job {new['id']} {jtype}")
+        except (PipelineError, psycopg.Error) as exc:
+            log(f"job {job['id']}: could not enqueue the next step ({str(exc).splitlines()[0][:120]})")
 
     def _record(self, jid, jtype, write, conn):
         """Write a job outcome, retrying on fresh connections; give up to the reaper if the DB stays down."""

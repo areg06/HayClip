@@ -165,17 +165,61 @@ def create_app(*, dsn: str | None = None, projects_root: Path | None = None, rep
                                            actor=str(form.get("removed_by", ""))[:100])
             except PipelineError as exc:
                 return back(f"/p/{pid}", exc.message)
-        return back("/", "stale project entry removed (its jobs and audit history are kept)")
+        return back("/dashboard", "stale project entry removed (its jobs and audit history are kept)")
 
-    # ----- dashboard ------------------------------------------------------------------------------
+    # ----- product pages ----------------------------------------------------------------------------
+    def with_stage(c, rows):
+        from .product import project_stage
+        for r in rows:
+            r.setdefault("stage", "Files missing")
+            r.setdefault("stage_tone", "bad")
+            r.setdefault("summary", "")
+            if r.get("storage_state") == queue.MISSING_STORAGE:
+                continue
+            jobs = queue.for_project(c, r["id"], 10)
+            reviewed = {x["clip_id"] for x in c.execute(
+                "SELECT DISTINCT clip_id FROM review_decisions WHERE project_id = %s", (r["id"],)).fetchall()}
+            scheduled = {x["clip_id"] for x in c.execute(
+                "SELECT DISTINCT clip_id FROM calendar_items WHERE project_id = %s AND status = 'Scheduled'",
+                (r["id"],)).fetchall()}
+            try:
+                r.update(project_stage(ProjectRepo(Path(r["dir"])), jobs, reviewed, scheduled))
+            except PipelineError:
+                pass
+        return rows
+
     @app.get("/", response_class=HTMLResponse)
+    def home(request: Request, msg: str | None = None):
+        return page(request, "home.html", nav_active="home", msg=msg)
+
+    @app.get("/dashboard", response_class=HTMLResponse)
     def dashboard(request: Request, msg: str | None = None):
         with conn() as c:
-            rows = queue.active_projects(c)
+            rows = with_stage(c, queue.active_projects(c))
         pilots = sorted(p.name for p in repo_root.glob("pilot-*") if PILOT_DIR.match(p.name) and (p / "project.json").exists())
         known = {Path(r["dir"]).name for r in rows}
-        return page(request, "dashboard.html", projects=rows, msg=msg,
+        return page(request, "dashboard.html", nav_active="dashboard", projects=rows, msg=msg,
                     registrable=[p for p in pilots if p not in known])
+
+    @app.get("/projects", response_class=HTMLResponse)
+    def projects_page(request: Request, msg: str | None = None):
+        with conn() as c:
+            rows = with_stage(c, queue.active_projects(c))
+        return page(request, "projects.html", nav_active="projects", projects=rows, msg=msg)
+
+    def new_page(request: Request, status: int = 200, **ctx):
+        lim = load_settings().limits
+        ctx.setdefault("tab", "youtube")
+        return page(request, "new.html", status=status, nav_active="dashboard",
+                    max_gb=round(lim.max_source_bytes / 1024**3, 1), max_hours=round(lim.max_source_seconds / 3600, 1), **ctx)
+
+    @app.get("/new", response_class=HTMLResponse)
+    def new_video(request: Request, tab: str = "youtube", msg: str | None = None):
+        return new_page(request, tab="upload" if tab == "upload" else "youtube", msg=msg)
+
+    @app.get("/settings", response_class=HTMLResponse)
+    def settings_page(request: Request, msg: str | None = None):
+        return page(request, "settings.html", nav_active="settings", msg=msg)
 
     @app.post("/projects")
     async def create_project(request: Request):
@@ -187,10 +231,7 @@ def create_app(*, dsn: str | None = None, projects_root: Path | None = None, rep
             if not name:
                 raise ValidationError("give the project a name")
         except PipelineError as exc:
-            with conn() as c:
-                rows = queue.active_projects(c)
-            return page(request, "dashboard.html", status=400, projects=rows, error=exc.message,
-                        hint=exc.hint, form_name=name, registrable=[])
+            return new_page(request, status=400, error=exc.message, hint=exc.hint, form_name=name)
         pid = new_id("prj")
         slug = _slug(name)
         projects_root.mkdir(parents=True, exist_ok=True)
@@ -200,6 +241,8 @@ def create_app(*, dsn: str | None = None, projects_root: Path | None = None, rep
         with conn() as c:
             row = queue.register_project(c, project_id=pid, name=name, dir=str(target), source_url=canonical_url(vid))
             queue.log_event(c, row["id"], "project_created", {"source": canonical_url(vid)}, actor="operator")
+            if form.get("find") == "1":       # "Find clips": captions, then candidates, no paid step
+                enqueue(c, row, "import_captions", {"then": ["generate_candidates"]}, f"{pid}:import_captions")
         return back(f"/p/{row['id']}")
 
     @app.post("/projects/register")
@@ -215,13 +258,13 @@ def create_app(*, dsn: str | None = None, projects_root: Path | None = None, rep
                 candidates.setdefault(p.name, p)
         target = candidates.get(name)
         if target is None or "/" in name or not (target / "project.json").is_file() or target.is_symlink():
-            return back("/", "That folder is not an allowed project folder (pilot-NN or a folder in the projects root)")
+            return back("/dashboard", "That folder is not an allowed project folder (pilot-NN or a folder in the projects root)")
         target = target.resolve()
         repo = ProjectRepo(target)
         try:
             project = repo.load()
         except PipelineError as exc:
-            return back("/", exc.message)
+            return back("/dashboard", exc.message)
         with conn() as c:
             row = queue.register_project(c, project_id=new_id("prj"), name=project.name, dir=str(target),
                                          source_url=project.source.get("url"))

@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Armenian videos into shorts{% endblock %}
+{% block content %}
+<section class="hero">
+  <h1>Turn Armenian videos into ready-to-post shorts.</h1>
+  <p class="lede">HayClips finds the moments worth sharing in your long videos, frames the speaker and adds accurate Armenian captions. You choose, edit and export.</p>
+  <div class="row">
+    <a class="btn primary big" href="/dashboard">Start creating</a>
+    <a class="btn big" href="#how">See how it works</a>
+  </div>
+</section>
+
+<section class="demo" aria-label="From one long video to several vertical clips">
+  <div class="long" role="img" aria-label="A long landscape video"></div>
+  <span class="arrow" aria-hidden="true">→</span>
+  <span class="hc"><span class="brandmark"><span class="dot" aria-hidden="true"></span>HayClips</span></span>
+  <span class="arrow" aria-hidden="true">→</span>
+  <div class="shorts" role="img" aria-label="Three vertical clips with Armenian captions">
+    <div class="short"><span>Ի՞նչ <b>ես</b> կարծում</span></div>
+    <div class="short"><span>Սա <b>կարևոր</b> է</span></div>
+    <div class="short"><span>Մի <b>պատմություն</b></span></div>
+  </div>
+</section>
+
+<section class="features" aria-label="What it does">
+  <div><h3>Finds the moments</h3><p>Suggests self-contained clips from long conversations. You decide which ones are worth finishing.</p></div>
+  <div><h3>Armenian captions</h3><p>Word-timed captions in clean Armenian, including correct <span lang="hy">և</span>. Fix any word before export.</p></div>
+  <div><h3>Speaker framing</h3><p>Turns landscape footage into vertical video that follows the speaker, shot by shot.</p></div>
+  <div><h3>Caption editing</h3><p>Pick a style, drag captions where you want them, edit text and timing-safe wording.</p></div>
+  <div><h3>Platform safe zones</h3><p>Preview TikTok, Reels and Shorts overlays so buttons never cover your words.</p></div>
+  <div><h3>Ready to export</h3><p>Download 9:16 MP4 and SRT files for short-form platforms, and plan when to post.</p></div>
+</section>
+
+<section id="how" aria-label="How it works">
+  <h2>How it works</h2>
+  <ol class="how">
+    <li><h3>Add a video</h3><p class="muted">Paste a YouTube link or upload a file.</p></li>
+    <li><h3>Choose clips</h3><p class="muted">Preview suggested moments and trim them. Nothing is paid for yet.</p></li>
+    <li><h3>Add captions</h3><p class="muted">Only the clips you chose are transcribed and captioned.</p></li>
+    <li><h3>Edit and export</h3><p class="muted">Adjust style, position and framing, then download.</p></li>
+  </ol>
+</section>
+{% endblock %}

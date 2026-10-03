@@ -22,8 +22,8 @@ from ..errors import PipelineError
 
 ACTIVE = ("QUEUED", "RUNNING", "RETRY_WAIT")
 POOLS = ("io", "cpu", "paid")
-TYPES = {"import_captions": "io", "generate_candidates": "cpu", "fetch_windows": "io",
-         "transcribe": "paid", "render": "cpu"}
+TYPES = {"import_captions": "io", "discover_transcript": "cpu", "generate_candidates": "cpu",
+         "preview_candidate": "io", "fetch_windows": "io", "transcribe": "paid", "render": "cpu"}
 BACKOFF_SECONDS = (10, 60, 300)
 
 

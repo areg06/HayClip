@@ -28,7 +28,7 @@ def env(pg_dsn, tmp_path, monkeypatch):
     return client, roots, pg_dsn
 
 
-def csrf(client, path="/"):
+def csrf(client, path="/dashboard"):
     r = client.get(path)
     assert r.status_code == 200, r.text[:300]
     return re.search(r'name="csrf" value="([0-9a-f]{64})"', r.text).group(1)
@@ -122,7 +122,7 @@ def test_create_project_and_enqueue_first_steps(env):
 def test_invalid_source_links_create_nothing(env, bad):
     client, roots, dsn = env
     r = post(client, "/projects", {"name": "x", "url": bad})
-    assert r.status_code == 400 and "banner bad" in r.text
+    assert r.status_code == 400 and 'class="notice bad" role="alert"' in r.text
     assert not roots["projects"].exists() or not any(roots["projects"].iterdir())
 
 
@@ -285,12 +285,12 @@ def test_register_existing_only_within_allowlist(env, tmp_path):
     ProjectRepo(pilot).init("pilot seven", {"kind": "youtube", "url": f"https://www.youtube.com/watch?v={VID}"})
     elsewhere = tmp_path / "elsewhere"
     ProjectRepo(elsewhere).init("nope", {})
-    assert "pilot-07" in client.get("/").text
+    assert "pilot-07" in client.get("/dashboard").text
     r = post(client, "/projects/register", {"dir": "pilot-07"})
     assert r.status_code == 303 and r.headers["location"].startswith("/p/prj_")
     for bad in ["../elsewhere", str(elsewhere), "elsewhere", "pilot-07/../../elsewhere"]:
         r = post(client, "/projects/register", {"dir": bad})
-        assert r.headers["location"].startswith("/?msg="), bad
+        assert r.headers["location"].startswith("/dashboard?msg="), bad
     from hayclips import db
     with db.connect(dsn) as c:
         assert [r["dir"] for r in c.execute("SELECT dir FROM projects").fetchall()] == [str(pilot.resolve())]
@@ -379,7 +379,7 @@ def test_missing_project_folder_is_explained_and_blocks_processing(env):
     pid = make_project(client, name="Gone pod")
     token = csrf(client)
     shutil.rmtree(project_dir(dsn, pid))
-    dash = client.get("/").text
+    dash = client.get("/dashboard").text
     assert "Gone pod" in dash and "files missing" in dash
     page = client.get(f"/p/{pid}")
     assert page.status_code == 200 and "local project files are missing" in page.text
@@ -398,9 +398,9 @@ def test_stale_entry_removal_requires_typed_name_and_is_audited(env):
     shutil.rmtree(project_dir(dsn, pid))
     r = post(client, f"/p/{pid}/remove", {"confirm_name": "wrong", "removed_by": "op"}, token=token)
     assert "type the project name" in r.headers["location"].replace("%20", " ")
-    assert "Gone pod" in client.get("/").text
+    assert "Gone pod" in client.get("/dashboard").text
     r = post(client, f"/p/{pid}/remove", {"confirm_name": "Gone pod", "removed_by": "op"}, token=token)
-    assert r.status_code == 303 and "Gone pod" not in client.get("/").text
+    assert r.status_code == 303 and "Gone pod" not in client.get("/dashboard").text
     with db.connect(dsn) as c:
         assert c.execute("SELECT removed_by FROM projects WHERE id = %s", (pid,)).fetchone()["removed_by"] == "op"
         assert c.execute("SELECT count(*) AS n FROM events WHERE kind = 'stale_project_removed'").fetchone()["n"] == 1
@@ -411,7 +411,7 @@ def test_remove_is_refused_while_files_exist(env):
     pid = make_project(client, name="Here pod")
     r = post(client, f"/p/{pid}/remove", {"confirm_name": "Here pod", "removed_by": "op"})
     assert "only projects whose files are missing" in r.headers["location"].replace("%20", " ")
-    assert project_dir(dsn, pid).exists() and "Here pod" in client.get("/").text
+    assert project_dir(dsn, pid).exists() and "Here pod" in client.get("/dashboard").text
 
 
 # ----- operator-effort metrics (Phase 1c) -------------------------------------------------------
@@ -458,3 +458,36 @@ def test_project_summary_reports_would_post_rate_and_effort(env):
     page = client.get(f"/p/{pid}/summary").text
     assert "Clips reviewed: 1" in page and "Would post: 1 of 1" in page    # latest decision per clip counts
     assert "Median minutes to fix: 6" in page and "B: 1" in page and "Needed a trim edit: 1" in page
+
+
+# ----- Phase 1d: product pages -------------------------------------------------------------------
+
+def test_homepage_dashboard_projects_and_new_pages(env):
+    client, roots, dsn = env
+    home = client.get("/").text
+    assert "Turn Armenian videos into ready-to-post shorts." in home and "Start creating" in home
+    assert "viral" not in home.lower() and "testimonial" not in home.lower()
+    assert "No videos yet" in client.get("/dashboard").text
+    assert 'name="url"' in client.get("/new").text and 'id="up-file"' in client.get("/new?tab=upload").text
+    pid = make_project(client, name="Listed pod")
+    for path in ("/dashboard", "/projects"):
+        assert "Listed pod" in client.get(path).text
+
+
+def test_find_clips_chains_captions_then_candidates(env):
+    client, roots, dsn = env
+    r = post(client, "/projects", {"name": "Chain pod", "url": f"https://youtu.be/{VID}", "find": "1"})
+    pid = r.headers["location"].split("/")[2]
+    (j,) = jobs(dsn, pid)
+    assert j["type"] == "import_captions" and j["payload"] == {"then": ["generate_candidates"]}
+
+
+def test_social_connect_is_a_non_functional_shell(env):
+    from hayclips import db
+    client, roots, dsn = env
+    page = client.get("/settings").text
+    assert page.count(">Connect<") == 3 and "Not connected" in page
+    r = client.get("/settings?msg=Social%20publishing%20is%20not%20available%20in%20this%20version.")
+    assert "Social publishing is not available in this version." in r.text
+    with db.connect(dsn) as c:
+        assert c.execute("SELECT count(*) AS n FROM events").fetchone()["n"] == 0     # nothing happened

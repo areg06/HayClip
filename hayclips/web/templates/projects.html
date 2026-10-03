@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Projects{% endblock %}
+{% block content %}
+<div class="page-head"><div class="grow"><h1>Projects</h1></div><a class="btn primary" href="/new">New video</a></div>
+{% if projects %}
+<div class="plist">
+  {% for p in projects %}
+  <a class="prow" href="/p/{{ p.id }}">
+    <div class="grow"><div class="name">{{ p.name }}</div><div class="sub">{{ p.summary }} · {{ p.created_at.strftime('%d %b %Y') }}</div></div>
+    {% if p.storage_state == 'MISSING_STORAGE' %}<span class="pill bad">files missing</span>
+    {% else %}<span class="pill {{ p.stage_tone }}">{{ p.stage }}</span>{% endif %}
+  </a>
+  {% endfor %}
+</div>
+{% else %}<p class="muted">No projects yet.</p>{% endif %}
+{% endblock %}

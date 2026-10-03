@@ -6,24 +6,38 @@
 <title>{% block title %}HayClips{% endblock %} · HayClips</title>
 <link rel="stylesheet" href="/static/app.css">
 </head>
-<body>
-<header>
-  <a class="brand" href="/">HayClips</a>
-  {% if row is defined and row %}
-  <nav>
-    <a href="/p/{{ row.id }}">Project</a>
-    <a href="/p/{{ row.id }}/candidates">Candidates</a>
-    <a href="/p/{{ row.id }}/transcribe">Transcription</a>
-    <a href="/p/{{ row.id }}/review">Review</a>
-    <a href="/p/{{ row.id }}/summary">Summary</a>
-  </nav>
-  {% endif %}
-  <span class="muted">local operator tool · nothing is published or sent to creators</span>
+<body class="{% block bodyclass %}{% endblock %}">
+<header class="topbar">
+  <div class="inner">
+    <a class="brandmark" href="/"><span class="dot" aria-hidden="true"></span>HayClips</a>
+    {% set active = nav_active if nav_active is defined else '' %}
+    <nav class="nav" aria-label="main">
+      <a href="/" {% if active == 'home' %}aria-current="page"{% endif %}>Home</a>
+      <a href="/dashboard" {% if active == 'dashboard' %}aria-current="page"{% endif %}>Dashboard</a>
+      <a href="/projects" {% if active == 'projects' %}aria-current="page"{% endif %}>Projects</a>
+      <a href="/calendar" {% if active == 'calendar' %}aria-current="page"{% endif %}>Calendar</a>
+      <a href="/brand" {% if active == 'brand' %}aria-current="page"{% endif %}>Brand Kit</a>
+      <a href="/settings" {% if active == 'settings' %}aria-current="page"{% endif %}>Settings</a>
+    </nav>
+    <span class="spacer"></span>
+    {% block topaction %}<a class="btn primary small" href="/new">New video</a>{% endblock %}
+  </div>
 </header>
 <main>
-{% if msg %}<div class="flash" role="status">{{ msg }}</div>{% endif %}
+{% if row is defined and row %}
+<nav class="crumbs" aria-label="project">
+  <a href="/projects">Projects</a> /
+  <a href="/p/{{ row.id }}">{{ row.name }}</a>
+  · <a href="/p/{{ row.id }}/candidates">Choose clips</a>
+  · <a href="/p/{{ row.id }}/captions">Add captions</a>
+  · <a href="/p/{{ row.id }}/review">Review</a>
+  · <a href="/p/{{ row.id }}/summary">Summary</a>
+</nav>
+{% endif %}
 {% block content %}{% endblock %}
 </main>
+{% if msg %}<div class="flash" role="status">{{ msg }}</div>{% endif %}
+<div hidden id="csrf-holder">{% include "_csrf.html" %}</div>
 <script src="/static/app.js"></script>
 </body>
 </html>

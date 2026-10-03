@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+<div class="page-head"><div class="grow"><h1>Settings</h1></div></div>
+<section>
+  <h2>Connected accounts</h2>
+  <p class="muted">Publishing to social platforms is not available in this version. Export your clips and post them yourself.</p>
+  <div class="accounts">
+    {% for name in ['Instagram', 'TikTok', 'YouTube'] %}
+    <div class="account">
+      <div class="grow"><strong>{{ name }}</strong><div class="muted">Not connected</div></div>
+      <a class="btn small" href="/settings?msg=Social%20publishing%20is%20not%20available%20in%20this%20version." data-connect="{{ name | lower }}">Connect</a>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+<section>
+  <h2>Transcription</h2>
+  <p class="muted">Captions come from paid transcription of the clips you choose. In this environment it is
+    <strong>{{ 'on' if paid_enabled else 'off' }}</strong>.</p>
+</section>
+{% endblock %}
