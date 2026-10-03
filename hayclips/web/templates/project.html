@@ -2,7 +2,7 @@
 {% block title %}{{ project.name }}{% endblock %}
 {% block content %}
 <h1>{{ project.name }}</h1>
-<p class="muted">Source: {{ project.source.url or 'unknown' }}{% if project.source.duration %} · {{ project.source.duration | stamp }}{% endif %}{% if project.source.title %} · <span lang="hy">{{ project.source.title }}</span>{% endif %}</p>
+<p class="muted">Source: {{ project.source.url or 'unknown' }}{% if project.source.duration %} · {{ project.source.duration | hms }}{% endif %}{% if project.source.title %} · <span lang="hy">{{ project.source.title }}</span>{% endif %}</p>
 
 {% set has_windows = clips | selectattr('window') | list | length > 0 %}
 {% set has_transcripts = clips | selectattr('attempt') | list | length > 0 %}
@@ -32,7 +32,11 @@
       <label>skip start s <input name="skip_start" type="number" step="1" value="0"></label>
       <label>skip end s <input name="skip_end" type="number" step="1" value="0"></label>
     </div>
+    {% if captions %}
     <p><button type="submit">Generate candidates</button> <a href="/p/{{ row.id }}/candidates">See candidates →</a></p>
+    {% else %}
+    <p><button type="submit" disabled>Generate candidates</button> <span class="muted">Fetch the free captions first; candidates are built from them.</span></p>
+    {% endif %}
   </form>
 </section>
 
@@ -43,7 +47,7 @@
   {% for x in clips %}{% set c = x.clip %}
   <tr class="{{ '' if c.selected else 'muted' }}">
     <td>{{ c.order }}</td>
-    <td lang="hy">{{ c.title or '(untitled)' }}<div class="meta">{{ c.id }} · {{ c.start | stamp }}–{{ c.end | stamp }}{% if c.hook %} · hook «{{ c.hook }}»{% endif %}</div></td>
+    <td lang="hy">{{ c.title or '(untitled)' }}<div class="meta">{{ c.id }} · {{ c.start | hms }}–{{ c.end | hms }} ({{ (c.end - c.start) | round | int }} s){% if c.hook %} · hook «{{ c.hook }}»{% endif %}</div></td>
     <td>{{ 'downloaded' if x.window else '—' }}</td>
     <td>{% if x.attempt %}{{ x.attempt.state }}<div class="meta">{{ x.attempt.state | safety }}</div>{% else %}—{% endif %}</td>
     <td>{{ x.rendered | join(', ') or '—' }}</td>
@@ -72,7 +76,11 @@
 
 <section class="card">
   <h2>6 · Render</h2>
+  {% if n_transcribed %}
   {% include "_render_form.html" %}
+  {% else %}
+  <p class="muted">Rendering needs a transcript: captions are burned in from it. Transcribe the selected clips first (step 5).</p>
+  {% endif %}
 </section>
 
 <section class="card">

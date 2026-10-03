@@ -9,9 +9,13 @@ Nothing is published. Which clip and style would you actually post, and how long
   <h2 lang="hy">#{{ c.order }} · {{ c.title or '(untitled)' }}</h2>
   <p class="meta">{{ c.id }}{% if c.pick_note %} · {{ c.pick_note }}{% endif %}</p>
   {% if not info %}
-    <p class="muted">Not rendered yet.</p>
+    {% if not x.window %}<p class="muted">Not rendered yet: download the window first (step 4).</p>
+    {% elif not x.transcribed %}<p class="muted">Not rendered yet: it needs a transcript (step 5). You can watch the downloaded window meanwhile.</p>
+    {% else %}<p class="muted">Not rendered yet: use "Render" below.</p>{% endif %}
+    {% if x.window and x.window.wide %}<figure><figcaption>Downloaded window (uncut, landscape)</figcaption>
+      <video controls preload="metadata" src="/p/{{ row.id }}/media/{{ c.id }}/wide.mp4"></video></figure>{% endif %}
   {% else %}
-    <p class="meta">Source {{ info.cut.source_start | stamp }}–{{ info.cut.source_end | stamp }} ·
+    <p class="meta">Source {{ info.cut.source_start | hms }}–{{ info.cut.source_end | hms }} ·
       {{ (info.cut.end - info.cut.start) | round(1) }} s · cut {{ info.cut.mode }}{% if info.cut.note %} ({{ info.cut.note }}){% endif %} ·
       first word at {{ info.first_word_at or 0 }} s</p>
     <p class="meta">Framing: {{ info.framing }} · alignment: {{ info.alignment.method }} ({{ (info.alignment.lag_s * 1000) | round | int }} ms) · audio: {{ info.audio }}</p>
@@ -40,8 +44,9 @@ Nothing is published. Which clip and style would you actually post, and how long
     <input type="text" name="trim" placeholder="e.g. 4.9:56.2 or auto">
     <p><button type="submit">Save</button></p>
   </form>
-  {% with clip_id = c.id %}{% include "_render_form.html" %}{% endwith %}
+  {% if x.transcribed %}{% with clip_id = c.id %}{% include "_render_form.html" %}{% endwith %}{% endif %}
 
+  {% if info %}
   <h3>Your decision</h3>
   <form method="post" action="/p/{{ row.id }}/clips/{{ c.id }}/review">
     {% include "_csrf.html" %}
@@ -56,6 +61,7 @@ Nothing is published. Which clip and style would you actually post, and how long
     <label>Reviewer</label><input type="text" name="reviewer" maxlength="100">
     <p><button class="primary" type="submit">Save decision</button></p>
   </form>
+  {% endif %}
   {% if x.decisions %}<ul class="plain">{% for d in x.decisions %}<li class="meta">{{ d.created_at.strftime('%Y-%m-%d %H:%M') }} · {{ d.would_post }}{% if d.style %} · style {{ d.style }}{% endif %}{% if d.minutes_to_fix is not none %} · {{ d.minutes_to_fix }} min{% endif %}{% if d.reviewer %} · {{ d.reviewer }}{% endif %}{% if d.notes %} · {{ d.notes }}{% endif %}</li>{% endfor %}</ul>{% endif %}
 </section>
 {% endfor %}

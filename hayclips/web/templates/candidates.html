@@ -7,7 +7,8 @@ Read each window and pick the 2–3 that make sense on their own.</div>
 {% if not cands %}<p class="muted">No candidates yet. Fetch captions and generate candidates on the <a href="/p/{{ row.id }}">project page</a>.</p>{% endif %}
 {% for x in cands %}{% set c = x.c %}
 <section class="card">
-  <h2>{{ c.start | stamp }}–{{ c.end | stamp }} · {{ (c.end - c.start) | round(1) }} s · score {{ c.score }}</h2>
+  <h2>{{ c.start | hms }}–{{ c.end | hms }} · {{ (c.end - c.start) | round | int }} s · score {{ c.score }}</h2>
+  {% if x.watch %}<p><a href="{{ x.watch }}" target="_blank" rel="noopener noreferrer">Watch this moment on YouTube ↗</a></p>{% endif %}
   <p class="meta">{{ x.explain }}</p>
   <p lang="hy">{{ c.text[:420] }}{% if c.text | length > 420 %}…{% endif %}</p>
   {% if x.clip %}

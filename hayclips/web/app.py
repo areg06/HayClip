@@ -48,6 +48,17 @@ class NotFound(Exception):
     pass
 
 
+def hms(value) -> str:
+    """Seconds as m:ss or h:mm:ss for people (SRT-style stamps stay in files)."""
+    try:
+        total = int(round(float(value)))
+    except (TypeError, ValueError):
+        return ""
+    h, rest = divmod(total, 3600)
+    m, sec = divmod(rest, 60)
+    return f"{h}:{m:02}:{sec:02}" if h else f"{m}:{sec:02}"
+
+
 def _slug(text: str) -> str:
     s = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
     return s[:40]
@@ -64,6 +75,7 @@ def create_app(*, dsn: str | None = None, projects_root: Path | None = None, rep
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
     env = Environment(loader=FileSystemLoader(HERE / "templates"), autoescape=select_autoescape(["html"]))
     env.filters["stamp"] = stamp
+    env.filters["hms"] = hms
     env.filters["safety"] = retry_safety
 
     with db.connect(conninfo) as conn:
@@ -114,6 +126,14 @@ def create_app(*, dsn: str | None = None, projects_root: Path | None = None, rep
 
     def selected_ids(project) -> list[str]:
         return [c.id for c in project.ordered()]
+
+    def transcribed(repo: ProjectRepo, clip_ids) -> set[str]:
+        from ..models import COMPLETED
+        return {cid for cid in clip_ids if any(a.state == COMPLETED for a in list_attempts(repo, cid))}
+
+    def has_captions(repo: ProjectRepo) -> bool:
+        src = repo.root / "source"
+        return src.is_dir() and any(src.glob("*.srt"))
 
     @app.exception_handler(NotFound)
     async def _nf(request, exc):
@@ -197,8 +217,9 @@ def create_app(*, dsn: str | None = None, projects_root: Path | None = None, rep
             clips.append({"clip": cl, "window": w, "attempt": att[-1] if att else None,
                           "rendered": sorted(info["outputs"]) if info else []})
         captions = sorted(p.name for p in (repo.root / "source").glob("*.srt")) if (repo.root / "source").exists() else []
+        n_transcribed = len(transcribed(repo, [x["clip"].id for x in clips if x["clip"].selected]))
         return page(request, "project.html", row=row, project=project, clips=clips, jobs=jobs, msg=msg,
-                    n_candidates=len(cands), captions=captions)
+                    n_candidates=len(cands), captions=captions, n_transcribed=n_transcribed)
 
     @app.get("/p/{pid}/jobs", response_class=HTMLResponse)
     def jobs_partial(request: Request, pid: str):
@@ -240,6 +261,8 @@ def create_app(*, dsn: str | None = None, projects_root: Path | None = None, rep
             key = f"{pid}:candidates:" + hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()[:12]
             with conn() as c:
                 row = project_row(c, pid)
+                if not has_captions(repo_for(row)):
+                    return back(f"/p/{pid}", "fetch the free captions first (step 1); candidates are built from them")
                 enqueue(c, row, "generate_candidates", payload, key)
         except (ValueError, PipelineError) as exc:
             return back(f"/p/{pid}", getattr(exc, "message", None) or "numbers only, please")
@@ -269,6 +292,9 @@ def create_app(*, dsn: str | None = None, projects_root: Path | None = None, rep
                 ids = [clip_of(project, only).id] if only else selected_ids(project)
                 if not ids:
                     return back(f"/p/{pid}", "select clips first")
+                if not transcribed(repo_for(row), ids):
+                    return back(f"/p/{pid}/review" if form.get("from") == "review" else f"/p/{pid}",
+                                "rendering needs a transcript: transcribe the clips first (step 5)")
                 payload = {"clip_ids": ids, "styles": styles, "caption_bottom": cb,
                            "hook_enabled": form.get("hook_enabled") == "on"}
                 key = f"{pid}:render:" + hashlib.sha256(
@@ -287,7 +313,14 @@ def create_app(*, dsn: str | None = None, projects_root: Path | None = None, rep
         repo = repo_for(row)
         project = repo.load()
         taken = {c.candidate_id: c for c in project.clips}
-        cands = [{"c": x, "explain": explain(x), "clip": taken.get(x.id)} for x in repo.load_candidates()]
+        vid = project.source.get("video_id") or ""
+        try:
+            vid = parse_youtube_ref(vid or project.source.get("url", ""))
+        except PipelineError:
+            vid = ""
+        cands = [{"c": x, "explain": explain(x), "clip": taken.get(x.id),
+                  "watch": f"https://www.youtube.com/watch?v={vid}&t={int(x.start)}s" if vid else None}
+                 for x in repo.load_candidates()]
         return page(request, "candidates.html", row=row, project=project, cands=cands, msg=msg)
 
     @app.post("/p/{pid}/select")
@@ -482,7 +515,7 @@ def create_app(*, dsn: str | None = None, projects_root: Path | None = None, rep
         for cl in project.ordered():
             info = jsonio.read_json(repo.render_dir(cl.id) / "render.json", default=None)
             w = repo.load_window(cl.id)
-            cards.append({"clip": cl, "info": info, "window": w,
+            cards.append({"clip": cl, "info": info, "window": w, "transcribed": bool(transcribed(repo, [cl.id])),
                           "transcript": srt_lines(repo.render_dir(cl.id) / "captions.srt"),
                           "decisions": [d for d in decisions if d["clip_id"] == cl.id]})
         return page(request, "review.html", row=row, project=project, cards=cards, msg=msg)

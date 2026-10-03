@@ -81,6 +81,12 @@ def with_rendered_clip(dsn, pid, *, audio=True):
         "hook": "Ի՞նչ ես կարդում հիմա", "outputs": {"A": {"path": "render/A.mp4", "width": 720, "height": 1280,
                                                           "duration": 35.3, "events": 40}},
         "checks": ["shot at 3.0s: 2 faces; check the framing"], "first_word_at": 0.1, "first_3s_text": "Երեկ"})
+    from hayclips.models import COMPLETED, MediaFile, TranscriptionAttempt
+    from hayclips.transcription.store import save_attempt
+    att = TranscriptionAttempt(id="att_0000000001", clip_id=clip.id, provider="harmar", state=COMPLETED,
+                               media=MediaFile(path="audio.m4a", sha256="0" * 64, bytes=1, kind="audio"),
+                               options={"timestamps": "word"}, origin="test")
+    save_attempt(repo, att)
     if audio:
         from hayclips.models import Window
         (cdir / "audio.m4a").write_bytes(b"fake-audio-bytes")
@@ -100,6 +106,8 @@ def test_create_project_and_enqueue_first_steps(env):
     assert d.parent == roots["projects"].resolve()
     assert ProjectRepo(d).load().source["url"] == f"https://www.youtube.com/watch?v={VID}"
     assert post(client, f"/p/{pid}/jobs/import_captions").status_code == 303
+    (d / "source").mkdir()                        # as if the caption import job had finished
+    (d / "source" / "src.hy-orig.srt").write_text("1\n00:00:00,000 --> 00:00:01,000\nԲարև։\n", encoding="utf-8")
     assert post(client, f"/p/{pid}/jobs/generate_candidates",
                 {"min_seconds": "20", "max_seconds": "50", "count": "4"}).status_code == 303
     got = {j["type"]: j for j in jobs(dsn, pid)}
@@ -306,3 +314,55 @@ def test_cancel_job(env):
     r = post(client, f"/p/{pid}/jobs/{job['id']}/cancel")
     assert "cancelled" in r.headers["location"]
     assert jobs(dsn, pid)[0]["state"] == "CANCELLED"
+
+
+# ----- found in operator testing 2026-10-03 -----------------------------------------------------
+
+def test_candidates_cannot_be_queued_before_captions(env):
+    client, roots, dsn = env
+    pid = make_project(client)
+    r = post(client, f"/p/{pid}/jobs/generate_candidates", {"count": "6"})
+    assert "fetch the free captions first" in r.headers["location"].replace("%20", " ")
+    assert not [j for j in jobs(dsn, pid) if j["type"] == "generate_candidates"]
+    assert "Fetch the free captions first" in client.get(f"/p/{pid}").text
+
+
+def test_render_refused_until_a_clip_is_transcribed(env):
+    client, roots, dsn = env
+    pid = make_project(client)
+    repo, cands = with_candidates(dsn, pid)
+    repo.select(cands[0].id)
+    r = post(client, f"/p/{pid}/jobs/render", {"style_A": "on"})
+    assert "needs a transcript" in r.headers["location"].replace("%20", " ")
+    assert not [j for j in jobs(dsn, pid) if j["type"] == "render"]
+    assert "Rendering needs a transcript" in client.get(f"/p/{pid}").text
+
+
+def test_times_are_human_readable(env):
+    client, roots, dsn = env
+    pid = make_project(client)
+    repo, cands = with_candidates(dsn, pid)
+    repo.select(cands[0].id)
+    page = client.get(f"/p/{pid}").text + client.get(f"/p/{pid}/candidates").text
+    assert "1:40–2:20" in page and "00:01:40,000" not in page
+
+
+def test_candidate_has_watch_link_at_its_start(env):
+    client, roots, dsn = env
+    pid = make_project(client)
+    with_candidates(dsn, pid)
+    page = client.get(f"/p/{pid}/candidates").text
+    assert f'href="https://www.youtube.com/watch?v={VID}&amp;t=100s"' in page
+    assert 'rel="noopener noreferrer"' in page
+
+
+def test_review_shows_downloaded_window_and_reason_before_render(env):
+    client, roots, dsn = env
+    pid = make_project(client)
+    repo, clip = with_rendered_clip(dsn, pid)
+    (repo.render_dir(clip.id) / "render.json").unlink()
+    (repo.transcription_dir(clip.id) / "att_0000000001.json").unlink()
+    page = client.get(f"/p/{pid}/review").text
+    assert f"/p/{pid}/media/{clip.id}/wide.mp4" in page
+    assert "Not rendered yet: it needs a transcript" in page
+    assert f'action="/p/{pid}/clips/{clip.id}/review"' not in page     # no decision form for nothing
